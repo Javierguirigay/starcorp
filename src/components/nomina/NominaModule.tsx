@@ -5,6 +5,7 @@ import {
   CalendarX,
   CheckCheck,
   Eye,
+  HandCoins,
   Landmark,
   Pencil,
   Search,
@@ -12,21 +13,31 @@ import {
   UserPlus,
 } from "lucide-react";
 import {
+  ADELANTOS_SEED,
   EMPLEADOS_SEED,
   HISTORIAL_SEED,
+  NEXT_ADELANTO_ID,
   NEXT_EMP_ID,
   NEXT_HIST_ID,
   TASA_INICIAL,
 } from "@/lib/data/empleados";
-import { fmtISO, money } from "@/lib/format";
-import { calcular, diario, round2 } from "@/lib/negocio/nomina";
-import type { CategoriaPago, Empleado, PagoHistorial } from "@/lib/types";
+import { fmtISO, formatFechaVE, money } from "@/lib/format";
+import { calcularConAdelanto, diario, round2 } from "@/lib/negocio/nomina";
+import {
+  aplicarAdelantos,
+  cancelarAdelanto,
+  editarAdelanto,
+  remanente,
+  totalPendiente,
+} from "@/lib/negocio/adelantos";
+import type { AdelantoSueldo, CategoriaPago, Empleado, PagoHistorial } from "@/lib/types";
 import { Toast } from "@/components/ui/Toast";
 import { Avatar, BadgeCategoria, BadgeEstatus } from "./badges";
 import { EmpleadoModal, type EmpleadoDatos } from "./EmpleadoModal";
 import { FaltasModal } from "./FaltasModal";
 import { BancoModal } from "./BancoModal";
 import { DetalleModal } from "./DetalleModal";
+import { AdelantoModal, type AdelantoDatos } from "./AdelantoModal";
 
 /* ===================== Estado central (reducer) ===================== */
 
@@ -36,6 +47,8 @@ interface Estado {
   historial: PagoHistorial[];
   nextHistId: number;
   faltas: Record<number, string[]>; // { empId: ['2026-06-09', ...] }
+  adelantos: AdelantoSueldo[];
+  nextAdelantoId: number;
 }
 
 type Accion =
@@ -43,12 +56,16 @@ type Accion =
   | { tipo: "eliminarEmpleado"; id: number }
   | { tipo: "toggleFalta"; empId: number; fecha: string }
   | { tipo: "limpiarFaltas"; empId: number }
+  | { tipo: "registrarAdelanto"; empleadoId: number; datos: AdelantoDatos }
+  | { tipo: "editarAdelanto"; id: number; datos: AdelantoDatos }
+  | { tipo: "cancelarAdelanto"; id: number }
   | {
       tipo: "registrarPago";
       categoria: CategoriaPago;
       desde: string;
       hasta: string;
       registrado: string;
+      tasa: number;
     };
 
 const ESTADO_INICIAL: Estado = {
@@ -57,6 +74,8 @@ const ESTADO_INICIAL: Estado = {
   historial: HISTORIAL_SEED,
   nextHistId: NEXT_HIST_ID,
   faltas: {},
+  adelantos: ADELANTOS_SEED,
+  nextAdelantoId: NEXT_ADELANTO_ID,
 };
 
 function empleadosDeCategoria(estado: Estado, cat: CategoriaPago): Empleado[] {
@@ -87,6 +106,10 @@ function reducer(estado: Estado, accion: Accion): Estado {
         ...estado,
         empleados: estado.empleados.filter((e) => e.id !== accion.id),
         faltas,
+        // Los adelantos ya descontados se conservan por trazabilidad del historial.
+        adelantos: estado.adelantos.filter(
+          (a) => a.empleadoId !== accion.id || a.estado === "descontado"
+        ),
       };
     }
     case "toggleFalta": {
@@ -98,31 +121,72 @@ function reducer(estado: Estado, accion: Accion): Estado {
     }
     case "limpiarFaltas":
       return { ...estado, faltas: { ...estado.faltas, [accion.empId]: [] } };
+    case "registrarAdelanto": {
+      const adelanto: AdelantoSueldo = {
+        id: estado.nextAdelantoId,
+        empleadoId: accion.empleadoId,
+        montoUSD: accion.datos.montoUSD,
+        fecha: accion.datos.fecha,
+        estado: "pendiente",
+        montoDescontadoUSD: 0,
+        aplicaciones: [],
+        ...(accion.datos.nota ? { nota: accion.datos.nota } : {}),
+      };
+      return {
+        ...estado,
+        adelantos: [...estado.adelantos, adelanto],
+        nextAdelantoId: estado.nextAdelantoId + 1,
+      };
+    }
+    case "editarAdelanto":
+      return {
+        ...estado,
+        adelantos: editarAdelanto(estado.adelantos, accion.id, accion.datos),
+      };
+    case "cancelarAdelanto":
+      return { ...estado, adelantos: cancelarAdelanto(estado.adelantos, accion.id) };
     case "registrarPago": {
       const lista = empleadosDeCategoria(estado, accion.categoria);
+      const pagoId = estado.nextHistId;
+      let adelantos = estado.adelantos;
       // Mismos redondeos que el original: +toFixed(2) por campo y por total.
       const detalle = lista.map((e) => {
-        const c = calcular(e, (estado.faltas[e.id] ?? []).length);
+        const pendiente = totalPendiente(adelantos, e.id);
+        const c = calcularConAdelanto(e, (estado.faltas[e.id] ?? []).length, pendiente);
+        const descAdelanto = round2(c.descAdelanto);
+        if (descAdelanto > 0) {
+          adelantos = aplicarAdelantos(adelantos, e.id, descAdelanto, pagoId);
+        }
         return {
           nombre: e.nombre,
           faltas: c.faltas,
           dias: c.dias,
           diario: round2(c.diario),
           desc: round2(c.desc),
+          descAdelanto,
           neto: round2(c.neto),
+          // Snapshot para recibos fieles aunque el empleado cambie después.
+          empId: e.id,
+          cargo: e.cargo,
+          dpto: e.dpto,
+          base: e.base,
+          banco: { ...e.banco },
         };
       });
       const totalUsd = round2(detalle.reduce((s, d) => s + d.neto, 0));
       const totalDesc = round2(detalle.reduce((s, d) => s + d.desc, 0));
+      const totalAdelanto = round2(detalle.reduce((s, d) => s + d.descAdelanto, 0));
 
       const pago: PagoHistorial = {
-        id: estado.nextHistId,
+        id: pagoId,
         categoria: accion.categoria,
         desde: accion.desde,
         hasta: accion.hasta,
         registrado: accion.registrado,
         totalUsd,
         totalDesc,
+        totalAdelanto,
+        tasa: accion.tasa,
         detalle,
       };
 
@@ -146,6 +210,7 @@ type ModalAbierto =
   | { tipo: "empleado"; id: number | null }
   | { tipo: "faltas"; id: number }
   | { tipo: "banco"; id: number }
+  | { tipo: "adelanto"; id: number }
   | { tipo: "detalle"; id: number }
   | null;
 
@@ -194,8 +259,11 @@ export function NominaModule() {
   const listaPago = estado.empleados.filter(
     (e) => e.categoria === pagoCat && e.estatus !== "Inactivo"
   );
-  const totDesc = listaPago.reduce((s, e) => s + calcular(e, faltasDe(e.id)).desc, 0);
-  const totNeto = listaPago.reduce((s, e) => s + calcular(e, faltasDe(e.id)).neto, 0);
+  const calcDe = (e: Empleado) =>
+    calcularConAdelanto(e, faltasDe(e.id), totalPendiente(estado.adelantos, e.id));
+  const totDesc = listaPago.reduce((s, e) => s + calcDe(e).desc, 0);
+  const totAdelanto = listaPago.reduce((s, e) => s + calcDe(e).descAdelanto, 0);
+  const totNeto = listaPago.reduce((s, e) => s + calcDe(e).neto, 0);
 
   const historialVisible = estado.historial.filter(
     (h) => histFiltro === "todos" || h.categoria === histFiltro
@@ -211,12 +279,17 @@ export function NominaModule() {
       setToast("Indica el período Desde y Hasta");
       return;
     }
+    if (tasa <= 0) {
+      setToast("Indica una tasa Bs/USD válida antes de registrar el pago");
+      return;
+    }
     dispatch({
       tipo: "registrarPago",
       categoria: pagoCat,
       desde: pagoDesde,
       hasta: pagoHasta,
       registrado: fmtISO(new Date()),
+      tasa,
     });
     setToast((pagoCat === "Semanal" ? "Semana" : "Quincena") + " registrada en el historial");
   };
@@ -235,6 +308,30 @@ export function NominaModule() {
     dispatch({ tipo: "guardarEmpleado", datos, id });
     setToast(id !== null ? "Empleado actualizado" : "Empleado agregado");
     setModal(null);
+  };
+
+  const guardarAdelanto = (datos: AdelantoDatos) => {
+    if (modal?.tipo !== "adelanto") return;
+    dispatch({ tipo: "registrarAdelanto", empleadoId: modal.id, datos });
+    setToast("Adelanto registrado");
+    setModal(null);
+  };
+
+  const actualizarAdelanto = (id: number, datos: AdelantoDatos) => {
+    dispatch({ tipo: "editarAdelanto", id, datos });
+    setToast("Adelanto actualizado");
+    setModal(null);
+  };
+
+  const anularAdelanto = (a: AdelantoSueldo) => {
+    if (
+      !confirm(
+        `¿Cancelar el adelanto pendiente de ${money(remanente(a))} del ${formatFechaVE(a.fecha)}?`
+      )
+    )
+      return;
+    dispatch({ tipo: "cancelarAdelanto", id: a.id });
+    setToast("Adelanto cancelado");
   };
 
   /* ---- render ---- */
@@ -350,6 +447,17 @@ export function NominaModule() {
                           <Landmark className="h-4 w-4" />
                         </button>
                         <button
+                          title="Registrar adelanto"
+                          onClick={() => setModal({ tipo: "adelanto", id: e.id })}
+                          className={`grid h-8 w-8 place-items-center rounded-lg hover:bg-gold-500/10 hover:text-gold-600 ${
+                            totalPendiente(estado.adelantos, e.id) > 0
+                              ? "text-gold-600"
+                              : "text-slate-400"
+                          }`}
+                        >
+                          <HandCoins className="h-4 w-4" />
+                        </button>
+                        <button
                           title="Editar"
                           onClick={() => setModal({ tipo: "empleado", id: e.id })}
                           className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-navy-700"
@@ -432,19 +540,20 @@ export function NominaModule() {
                 <th className="px-5 py-3 text-right font-600">Salario diario</th>
                 <th className="px-5 py-3 text-center font-600">Faltas</th>
                 <th className="px-5 py-3 text-right font-600">Descuento</th>
+                <th className="px-5 py-3 text-right font-600">Adelanto</th>
                 <th className="px-5 py-3 text-right font-600">Neto a pagar</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {listaPago.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">
+                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">
                     No hay empleados activos en esta categoría.
                   </td>
                 </tr>
               ) : (
                 listaPago.map((e) => {
-                  const c = calcular(e, faltasDe(e.id));
+                  const c = calcDe(e);
                   return (
                     <tr key={e.id} className="hover:bg-slate-50/60">
                       <td className="px-5 py-3">
@@ -479,6 +588,18 @@ export function NominaModule() {
                       >
                         {c.desc > 0 ? "− " + money(c.desc) : money(0)}
                       </td>
+                      <td
+                        className={`px-5 py-3 text-right font-mono ${
+                          c.descAdelanto > 0 ? "text-rose-600" : "text-slate-400"
+                        }`}
+                      >
+                        {c.descAdelanto > 0 ? "− " + money(c.descAdelanto) : money(0)}
+                        {c.descAdelanto > 0 && (
+                          <span className="block font-mono text-[11px] text-slate-400">
+                            {enBs(c.descAdelanto)}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-5 py-3 text-right">
                         <span className="font-mono text-base font-700 text-navy-950">
                           {money(c.neto)}
@@ -498,6 +619,9 @@ export function NominaModule() {
                   Totales del período
                 </td>
                 <td className="px-5 py-3 text-right font-mono text-rose-600">− {money(totDesc)}</td>
+                <td className="px-5 py-3 text-right font-mono text-rose-600">
+                  − {money(totAdelanto)}
+                </td>
                 <td className="px-5 py-3 text-right font-mono text-navy-950">
                   {money(totNeto)}
                   <span className="block text-[11px] text-slate-400">{enBs(totNeto)}</span>
@@ -510,7 +634,7 @@ export function NominaModule() {
         <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-slate-400">
             {listaPago.length > 0 &&
-              `${listaPago.length} empleado(s) ${pagoCat.toLowerCase()}(es) · período ${pagoDesde} → ${pagoHasta}`}
+              `${listaPago.length} empleado(s) ${pagoCat.toLowerCase()}(es) · período ${formatFechaVE(pagoDesde)} → ${formatFechaVE(pagoHasta)}`}
           </p>
           <div>
             <button
@@ -549,6 +673,7 @@ export function NominaModule() {
                 <th className="px-5 py-3 font-600">Período</th>
                 <th className="px-5 py-3 font-600">Registrado</th>
                 <th className="px-5 py-3 text-right font-600">Descuentos</th>
+                <th className="px-5 py-3 text-right font-600">Adelanto</th>
                 <th className="px-5 py-3 text-right font-600">Total pagado</th>
                 <th className="px-5 py-3 text-right font-600">Detalle</th>
               </tr>
@@ -556,22 +681,31 @@ export function NominaModule() {
             <tbody className="divide-y divide-slate-50">
               {historialVisible.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">
+                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">
                     Aún no hay pagos registrados para este filtro.
                   </td>
                 </tr>
               ) : (
-                historialVisible.map((h) => (
+                historialVisible.map((h) => {
+                  // Bs del historial con la tasa congelada del pago (pagos previos: la vigente).
+                  const enBsPago = (usd: number) => money(usd * (h.tasa ?? tasa), "Bs");
+                  return (
                   <tr key={h.id} className="hover:bg-slate-50/60">
                     <td className="px-5 py-3">
                       <BadgeCategoria categoria={h.categoria} />
                     </td>
                     <td className="px-5 py-3">
-                      <span className="font-mono text-xs text-navy-900">{h.desde}</span>{" "}
+                      <span className="font-mono text-xs text-navy-900">
+                        {formatFechaVE(h.desde)}
+                      </span>{" "}
                       <span className="text-slate-300">→</span>{" "}
-                      <span className="font-mono text-xs text-navy-900">{h.hasta}</span>
+                      <span className="font-mono text-xs text-navy-900">
+                        {formatFechaVE(h.hasta)}
+                      </span>
                     </td>
-                    <td className="px-5 py-3 font-mono text-xs text-slate-500">{h.registrado}</td>
+                    <td className="px-5 py-3 font-mono text-xs text-slate-500">
+                      {formatFechaVE(h.registrado)}
+                    </td>
                     <td
                       className={`px-5 py-3 text-right font-mono ${
                         h.totalDesc > 0 ? "text-rose-600" : "text-slate-400"
@@ -579,10 +713,22 @@ export function NominaModule() {
                     >
                       {h.totalDesc > 0 ? "− " + money(h.totalDesc) : money(0)}
                     </td>
+                    <td
+                      className={`px-5 py-3 text-right font-mono ${
+                        (h.totalAdelanto ?? 0) > 0 ? "text-rose-600" : "text-slate-400"
+                      }`}
+                    >
+                      {(h.totalAdelanto ?? 0) > 0 ? "− " + money(h.totalAdelanto!) : money(0)}
+                      {(h.totalAdelanto ?? 0) > 0 && (
+                        <span className="block font-mono text-[11px] text-slate-400">
+                          {enBsPago(h.totalAdelanto!)}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-right">
                       <span className="font-mono font-700 text-navy-950">{money(h.totalUsd)}</span>
                       <span className="block font-mono text-[11px] text-slate-400">
-                        {enBs(h.totalUsd)}
+                        {enBsPago(h.totalUsd)}
                       </span>
                     </td>
                     <td className="px-5 py-3 text-right">
@@ -594,7 +740,8 @@ export function NominaModule() {
                       </button>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -625,13 +772,31 @@ export function NominaModule() {
       {modal?.tipo === "banco" && buscarEmp(modal.id) && (
         <BancoModal empleado={buscarEmp(modal.id)!} onClose={() => setModal(null)} />
       )}
-      {modal?.tipo === "detalle" && (
-        <DetalleModal
-          pago={estado.historial.find((h) => h.id === modal.id)!}
+      {modal?.tipo === "adelanto" && buscarEmp(modal.id) && (
+        <AdelantoModal
+          empleado={buscarEmp(modal.id)!}
           tasa={tasa}
+          adelantos={estado.adelantos}
+          onGuardar={guardarAdelanto}
+          onEditar={actualizarAdelanto}
+          onCancelar={anularAdelanto}
           onClose={() => setModal(null)}
         />
       )}
+      {modal?.tipo === "detalle" &&
+        (() => {
+          const pago = estado.historial.find((h) => h.id === modal.id)!;
+          return (
+            <DetalleModal
+              pago={pago}
+              // Tasa congelada al registrar el pago (pagos previos al campo: la vigente).
+              tasa={pago.tasa ?? tasa}
+              empleados={estado.empleados}
+              onToast={setToast}
+              onClose={() => setModal(null)}
+            />
+          );
+        })()}
 
       {/* Aviso flotante */}
       {toast && <Toast mensaje={toast} />}

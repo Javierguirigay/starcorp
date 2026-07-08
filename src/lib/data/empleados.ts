@@ -1,4 +1,4 @@
-import type { Empleado, PagoHistorial } from "../types";
+import type { AdelantoSueldo, Empleado, PagoHistorial } from "../types";
 
 /* Empleados semilla (de nomina.php). */
 export const EMPLEADOS_SEED: Empleado[] = [
@@ -36,11 +36,13 @@ export const EMPLEADOS_SEED: Empleado[] = [
 
 export const NEXT_EMP_ID = 7;
 
+export const TASA_INICIAL = 36.5;
+
 /* Historial con dos pagos de ejemplo para que la sección no luzca vacía. */
 export const HISTORIAL_SEED: PagoHistorial[] = [
   {
     id: 101, categoria: "Quincenal", desde: "2026-05-16", hasta: "2026-05-31",
-    registrado: "2026-06-01", totalUsd: 900.0, totalDesc: 0.0,
+    registrado: "2026-06-01", totalUsd: 900.0, totalDesc: 0.0, tasa: TASA_INICIAL,
     detalle: [
       { nombre: "Carlos González", faltas: 0, dias: 15, diario: 20.67, desc: 0.0, neto: 310.0 },
       { nombre: "María Rodríguez", faltas: 0, dias: 15, diario: 16.0, desc: 0.0, neto: 240.0 },
@@ -49,7 +51,7 @@ export const HISTORIAL_SEED: PagoHistorial[] = [
   },
   {
     id: 102, categoria: "Semanal", desde: "2026-06-01", hasta: "2026-06-07",
-    registrado: "2026-06-08", totalUsd: 80.34, totalDesc: 15.34,
+    registrado: "2026-06-08", totalUsd: 80.34, totalDesc: 15.34, tasa: TASA_INICIAL,
     detalle: [
       { nombre: "José Pérez", faltas: 1, dias: 7, diario: 4.67, desc: 4.67, neto: 28.0 },
       { nombre: "Luis Martínez", faltas: 0, dias: 7, diario: 3.67, desc: 0.0, neto: 25.67 },
@@ -60,4 +62,16 @@ export const HISTORIAL_SEED: PagoHistorial[] = [
 
 export const NEXT_HIST_ID = 103;
 
-export const TASA_INICIAL = 36.5;
+/* Adelantos de sueldo de ejemplo (pendientes de descontar). */
+export const ADELANTOS_SEED: AdelantoSueldo[] = [
+  {
+    id: 1, empleadoId: 3, montoUSD: 30, fecha: "2026-06-10", estado: "pendiente",
+    montoDescontadoUSD: 0, aplicaciones: [], nota: "Emergencia familiar",
+  },
+  {
+    id: 2, empleadoId: 1, montoUSD: 50, fecha: "2026-06-05", estado: "pendiente",
+    montoDescontadoUSD: 0, aplicaciones: [],
+  },
+];
+
+export const NEXT_ADELANTO_ID = 3;

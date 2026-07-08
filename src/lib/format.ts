@@ -33,6 +33,16 @@ export function parseVES(s: string): number {
   return Number.isNaN(v) ? 0 : v;
 }
 
+/**
+ * Presentación de fechas en es-VE: "2026-06-08" (ISO) -> "08-06-2026".
+ * Manipula el string directamente (sin new Date()) para evitar corrimientos
+ * por zona horaria. Entrada no ISO: se devuelve tal cual.
+ */
+export function formatFechaVE(fecha: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(fecha ?? "");
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : fecha ?? "";
+}
+
 /** Fecha -> "yyyy-mm-dd" (réplica de fmtISO del boceto). */
 export function fmtISO(d: Date): string {
   return (

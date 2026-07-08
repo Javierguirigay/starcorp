@@ -1,6 +1,7 @@
 "use client";
 
 import type { Empleado } from "@/lib/types";
+import { formatFechaVE } from "@/lib/format";
 import { DOW, rangoFechas } from "@/lib/negocio/nomina";
 import { Modal } from "@/components/ui/Modal";
 
@@ -27,7 +28,7 @@ export function FaltasModal({
     <Modal
       onClose={onClose}
       title="Marcar faltas"
-      subtitle={`${empleado.nombre} · ${desde} → ${hasta}`}
+      subtitle={`${empleado.nombre} · ${formatFechaVE(desde)} → ${formatFechaVE(hasta)}`}
       maxWidth="max-w-lg"
       footer={
         <>

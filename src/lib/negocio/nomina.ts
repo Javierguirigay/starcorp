@@ -33,6 +33,27 @@ export function calcular(
   return { dias: dp, diario: d, faltas: f, desc: f * d, neto: (dp - f) * d };
 }
 
+export interface CalculoPagoAdelanto extends CalculoPago {
+  /** Adelanto efectivamente aplicado (≤ bruto tras faltas; garantiza neto ≥ 0). */
+  descAdelanto: number;
+}
+
+/**
+ * Igual que calcular(), restando además el adelanto pendiente del empleado.
+ * Salvaguarda: nunca genera neto negativo; si el adelanto supera el bruto
+ * disponible, se aplica solo hasta dejar neto = 0 y el remanente queda
+ * pendiente para el próximo pago.
+ */
+export function calcularConAdelanto(
+  emp: Pick<Empleado, "base" | "categoria">,
+  faltasMarcadas: number,
+  adelantoPendienteUSD: number
+): CalculoPagoAdelanto {
+  const c = calcular(emp, faltasMarcadas);
+  const descAdelanto = Math.min(Math.max(adelantoPendienteUSD, 0), c.neto);
+  return { ...c, descAdelanto, neto: c.neto - descAdelanto };
+}
+
 /** Redondeo a 2 decimales como el original: +x.toFixed(2). */
 export function round2(n: number): number {
   return +n.toFixed(2);

@@ -132,6 +132,29 @@ export interface Empleado {
   banco: DatosBancarios;
 }
 
+export type EstadoAdelanto = "pendiente" | "descontado";
+
+/** Porción de un adelanto descontada en un pago concreto. */
+export interface AplicacionAdelanto {
+  pagoId: number; // PagoHistorial.id
+  montoUSD: number;
+}
+
+export interface AdelantoSueldo {
+  id: number;
+  empleadoId: number;
+  montoUSD: number;
+  fecha: string; // ISO yyyy-mm-dd; se muestra dd-mm-yyyy
+  /** 'pendiente' mientras quede remanente por descontar. */
+  estado: EstadoAdelanto;
+  /** Acumulado ya descontado (0..montoUSD); el remanente pasa al próximo pago. */
+  montoDescontadoUSD: number;
+  aplicaciones: AplicacionAdelanto[];
+  /** Pago que lo dejó saldado ('descontado'). */
+  pagoNominaId?: number;
+  nota?: string;
+}
+
 export interface DetallePago {
   nombre: string;
   faltas: number;
@@ -139,6 +162,16 @@ export interface DetallePago {
   diario: number;
   desc: number;
   neto: number;
+  /** Adelanto descontado en este pago (pagos previos a la función: undefined = 0). */
+  descAdelanto?: number;
+  /* Snapshot del empleado al momento del pago, para recibos PDF fieles
+     aunque el empleado se edite o elimine después. Pagos del seed: undefined. */
+  empId?: number;
+  cargo?: string;
+  dpto?: string;
+  /** Salario base mensual (USD) al momento del pago. */
+  base?: number;
+  banco?: DatosBancarios;
 }
 
 export interface PagoHistorial {
@@ -149,6 +182,10 @@ export interface PagoHistorial {
   registrado: string; // ISO
   totalUsd: number;
   totalDesc: number;
+  /** Suma de descAdelanto del detalle (pagos previos: undefined = 0). */
+  totalAdelanto?: number;
+  /** Tasa Bs/USD congelada al registrar el pago (pagos previos: se usa la vigente). */
+  tasa?: number;
   detalle: DetallePago[];
 }
 
