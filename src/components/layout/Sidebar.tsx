@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   LogOut,
   Package,
-  Receipt,
   Users,
   Wallet,
   Wrench,
@@ -56,8 +55,7 @@ export function Sidebar() {
   const adminItems: { item: Item; visible: boolean }[] = [
     { visible: puede(rol, "nomina"), item: { key: "nomina", href: `${ADMIN_BASE}/nomina`, label: "Nómina del personal", icon: Users } },
     { visible: puede(rol, "finanzas"), item: { key: "finanzas", href: `${ADMIN_BASE}/finanzas`, label: "Finanzas", icon: Wallet } },
-    { visible: puede(rol, "facturas"), item: { key: "facturas", href: `${ADMIN_BASE}/facturas`, label: "Facturas", icon: FileText } },
-    { visible: puede(rol, "retenciones"), item: { key: "retenciones", href: `${ADMIN_BASE}/retenciones`, label: "Retenciones IVA", icon: Receipt } },
+    { visible: puede(rol, "facturas"), item: { key: "facturas", href: `${ADMIN_BASE}/facturas`, label: "Facturación y Compras", icon: FileText } },
     { visible: puede(rol, "inventario"), item: { key: "inventario", href: `${ADMIN_BASE}/inventario`, label: "Inventario", icon: Package } },
     { visible: puede(rol, "inventario"), item: { key: "equipos", href: `${ADMIN_BASE}/equipos`, label: "Equipos", icon: Forklift } },
     { visible: puede(rol, "inventario"), item: { key: "mantenimiento", href: `${ADMIN_BASE}/mantenimiento`, label: "Mantenimiento", icon: Wrench } },

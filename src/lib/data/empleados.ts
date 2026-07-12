@@ -36,7 +36,7 @@ export const EMPLEADOS_SEED: Empleado[] = [
 
 export const NEXT_EMP_ID = 7;
 
-export const TASA_INICIAL = 36.5;
+export const TASA_INICIAL = 709.69;
 
 /* Historial con dos pagos de ejemplo para que la sección no luzca vacía. */
 export const HISTORIAL_SEED: PagoHistorial[] = [

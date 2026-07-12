@@ -1,7 +1,7 @@
 /**
- * Generación y descarga de PDFs 100% en el cliente. El renderer se importa
- * dinámicamente aquí (y los documentos en el handler que llama) para
- * mantenerlo fuera del bundle inicial.
+ * Generación y descarga de PDFs 100% en el cliente (compartido por nómina y
+ * finanzas). El renderer se importa dinámicamente aquí (y los documentos en
+ * el handler que llama) para mantenerlo fuera del bundle inicial.
  */
 import type { ReactElement } from "react";
 import { formatFechaVE } from "@/lib/format";

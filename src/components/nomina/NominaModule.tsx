@@ -19,17 +19,17 @@ import {
   NEXT_ADELANTO_ID,
   NEXT_EMP_ID,
   NEXT_HIST_ID,
-  TASA_INICIAL,
 } from "@/lib/data/empleados";
 import { fmtISO, formatFechaVE, money } from "@/lib/format";
-import { calcularConAdelanto, diario, round2 } from "@/lib/negocio/nomina";
+import { calcularConAdelanto, diario } from "@/lib/negocio/nomina";
 import {
-  aplicarAdelantos,
   cancelarAdelanto,
   editarAdelanto,
   remanente,
   totalPendiente,
 } from "@/lib/negocio/adelantos";
+import { construirRegistroPago } from "@/lib/negocio/pagos";
+import { useFinanzas } from "@/components/finanzas/FinanzasProvider";
 import type { AdelantoSueldo, CategoriaPago, Empleado, PagoHistorial } from "@/lib/types";
 import { Toast } from "@/components/ui/Toast";
 import { Avatar, BadgeCategoria, BadgeEstatus } from "./badges";
@@ -77,10 +77,6 @@ const ESTADO_INICIAL: Estado = {
   adelantos: ADELANTOS_SEED,
   nextAdelantoId: NEXT_ADELANTO_ID,
 };
-
-function empleadosDeCategoria(estado: Estado, cat: CategoriaPago): Empleado[] {
-  return estado.empleados.filter((e) => e.categoria === cat && e.estatus !== "Inactivo");
-}
 
 function reducer(estado: Estado, accion: Accion): Estado {
   switch (accion.tipo) {
@@ -146,59 +142,30 @@ function reducer(estado: Estado, accion: Accion): Estado {
     case "cancelarAdelanto":
       return { ...estado, adelantos: cancelarAdelanto(estado.adelantos, accion.id) };
     case "registrarPago": {
-      const lista = empleadosDeCategoria(estado, accion.categoria);
-      const pagoId = estado.nextHistId;
-      let adelantos = estado.adelantos;
-      // Mismos redondeos que el original: +toFixed(2) por campo y por total.
-      const detalle = lista.map((e) => {
-        const pendiente = totalPendiente(adelantos, e.id);
-        const c = calcularConAdelanto(e, (estado.faltas[e.id] ?? []).length, pendiente);
-        const descAdelanto = round2(c.descAdelanto);
-        if (descAdelanto > 0) {
-          adelantos = aplicarAdelantos(adelantos, e.id, descAdelanto, pagoId);
-        }
-        return {
-          nombre: e.nombre,
-          faltas: c.faltas,
-          dias: c.dias,
-          diario: round2(c.diario),
-          desc: round2(c.desc),
-          descAdelanto,
-          neto: round2(c.neto),
-          // Snapshot para recibos fieles aunque el empleado cambie después.
-          empId: e.id,
-          cargo: e.cargo,
-          dpto: e.dpto,
-          base: e.base,
-          banco: { ...e.banco },
-        };
-      });
-      const totalUsd = round2(detalle.reduce((s, d) => s + d.neto, 0));
-      const totalDesc = round2(detalle.reduce((s, d) => s + d.desc, 0));
-      const totalAdelanto = round2(detalle.reduce((s, d) => s + d.descAdelanto, 0));
-
-      const pago: PagoHistorial = {
-        id: pagoId,
+      const { pago, adelantos } = construirRegistroPago({
+        empleados: estado.empleados,
+        faltas: estado.faltas,
+        adelantos: estado.adelantos,
+        nextHistId: estado.nextHistId,
         categoria: accion.categoria,
         desde: accion.desde,
         hasta: accion.hasta,
         registrado: accion.registrado,
-        totalUsd,
-        totalDesc,
-        totalAdelanto,
         tasa: accion.tasa,
-        detalle,
-      };
+      });
 
       // Limpiar faltas de los empleados pagados (nuevo período empieza limpio).
       const faltas = { ...estado.faltas };
-      lista.forEach((e) => (faltas[e.id] = []));
+      pago.detalle.forEach((d) => {
+        if (d.empId != null) faltas[d.empId] = [];
+      });
 
       return {
         ...estado,
         historial: [pago, ...estado.historial],
         nextHistId: estado.nextHistId + 1,
         faltas,
+        adelantos,
       };
     }
   }
@@ -224,9 +191,8 @@ const tabCls = (activo: boolean) =>
 export function NominaModule() {
   const [estado, dispatch] = useReducer(reducer, ESTADO_INICIAL);
 
-  const [tasaTexto, setTasaTexto] = useState(TASA_INICIAL.toFixed(2)); // "36.50", como el boceto
-  const tasaNum = parseFloat(tasaTexto);
-  const tasa = isNaN(tasaNum) ? 0 : tasaNum;
+  // Tasa Bs/USD global compartida con Finanzas (única en toda la app).
+  const { tasaTexto, setTasaTexto, tasa, registrarPagoNomina } = useFinanzas();
 
   const [empFiltro, setEmpFiltro] = useState<FiltroCat>("todos");
   const [empBusqueda, setEmpBusqueda] = useState("");
@@ -283,14 +249,29 @@ export function NominaModule() {
       setToast("Indica una tasa Bs/USD válida antes de registrar el pago");
       return;
     }
+    const registrado = fmtISO(new Date());
     dispatch({
       tipo: "registrarPago",
       categoria: pagoCat,
       desde: pagoDesde,
       hasta: pagoHasta,
-      registrado: fmtISO(new Date()),
+      registrado,
       tasa,
     });
+    // Misma función pura que el reducer con los mismos inputs ⇒ mismo pago
+    // (id y totales); Finanzas registra la salida automática de Nómina.
+    const { pago } = construirRegistroPago({
+      empleados: estado.empleados,
+      faltas: estado.faltas,
+      adelantos: estado.adelantos,
+      nextHistId: estado.nextHistId,
+      categoria: pagoCat,
+      desde: pagoDesde,
+      hasta: pagoHasta,
+      registrado,
+      tasa,
+    });
+    registrarPagoNomina(pago, "loter");
     setToast((pagoCat === "Semanal" ? "Semana" : "Quincena") + " registrada en el historial");
   };
 

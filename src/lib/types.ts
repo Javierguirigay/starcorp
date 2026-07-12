@@ -91,18 +91,256 @@ export interface MovimientoDashboard {
   positivo: boolean;
 }
 
-/* ---------------- Facturas ---------------- */
+/* ---------------- Finanzas por empresa ---------------- */
 
-export type EstadoFactura = "Cobrada" | "Pendiente" | "Pagada";
+export type TipoTransaccion = "entrada" | "salida";
 
+export type OrigenTransaccion = "manual" | "nomina" | "transferencia" | "factura" | "compra";
+
+/** 'ambas' cubre categorías válidas para entrada y salida (Transferencias del Grupo). */
+export type TipoCategoria = TipoTransaccion | "ambas";
+
+/** Marca de categoría de sistema: los movimientos automáticos la buscan por
+    este campo (no por nombre) para sobrevivir a renombres. */
+export type CategoriaSistema = "nomina" | "transferencias" | "facturas";
+
+export interface CategoriaFinanciera {
+  id: number;
+  nombre: string;
+  tipo: TipoCategoria;
+  empresaId: string; // Empresa.key
+  /** Categorías de sistema: no editables ni eliminables. */
+  protegida?: boolean;
+  sistema?: CategoriaSistema;
+}
+
+export interface TransaccionFinanciera {
+  id: number;
+  empresaId: string; // Empresa.key
+  tipo: TipoTransaccion;
+  categoriaId: number;
+  /** SIEMPRE en USD; Bs = montoUSD × tasaBs. */
+  montoUSD: number;
+  /** Tasa Bs/USD congelada al registrar (histórico fiel). */
+  tasaBs: number;
+  fecha: string; // ISO yyyy-mm-dd; se muestra dd-mm-yyyy
+  descripcion: string;
+  origen: OrigenTransaccion;
+  /** PagoHistorial.id ('nomina'), MovimientoGrupo.id ('transferencia'),
+      Factura.id ('factura') o FacturaRecibida.id ('compra'). */
+  referenciaId?: number;
+}
+
+/** Movimiento del historial del Grupo con estado (sucesor del Movimiento estático). */
+export interface MovimientoGrupo {
+  id: number;
+  fecha: string; // ISO yyyy-mm-dd
+  tipo: TipoMovimiento;
+  /** Empresa.key cuando el extremo es una empresa del grupo. */
+  origenKey?: string;
+  destinoKey?: string;
+  /** Texto libre para extremos externos ("IESV (cliente)", "Nómina"). */
+  origenNombre: string;
+  destinoNombre: string;
+  moneda: "USD" | "Bs";
+  monto: number;
+  /** Tasa Bs/USD vigente al registrar (para el espejo por empresa). */
+  tasaBs: number;
+  descripcion: string;
+  usuario: string;
+}
+
+/* ---------------- Facturación (ventas) ---------------- */
+
+export interface Cliente {
+  id: number;
+  razonSocial: string;
+  rif: string;
+  domicilio: string;
+  telefono: string;
+}
+
+/** Renglón de período de servicio de un reporte (cada luminaria/equipo puede
+    iniciar en fecha distinta; los días se auto-calculan pero son editables). */
+export interface PeriodoServicio {
+  id: number;
+  concepto: string;
+  desde: string; // ISO yyyy-mm-dd
+  hasta: string; // ISO
+  dias: number;
+}
+
+export type EstadoReporte = "pendiente" | "prefacturado";
+
+/** Reporte de servicio de campo (PDF escaneado + transcripción manual). */
+export interface ReporteServicio {
+  id: number;
+  numeroControl: string; // ej. "00384"
+  fecha: string; // ISO
+  clienteId: number;
+  locacion: string;
+  pozo: string; // ej. MUC-102, SBC-37
+  tipoEquipo: string; // Generador, Luminarias…
+  placas?: string;
+  descripcion: string;
+  periodos: PeriodoServicio[];
+  supervisorNombre: string;
+  supervisorCI: string;
+  estado: EstadoReporte;
+  /** Object URL del PDF subido (vive solo la sesión, fase mock). */
+  pdfUrl?: string;
+  pdfNombre?: string;
+}
+
+export interface RenglonFactura {
+  id: number;
+  can: number;
+  descripcion: string;
+  /** Prefactura: USD. Factura: Bs (ya convertido por unitario a la tasa snapshot). */
+  pUnit: number;
+}
+
+export type EstadoPreFactura = "borrador" | "emitida" | "facturada";
+
+/** Pre-factura en USD (documento previo al talonario fiscal). */
+export interface PreFactura {
+  id: number;
+  numero: string; // correlativo "066", editable
+  fecha: string; // ISO
+  clienteId: number;
+  condicionesPago: string;
+  renglones: RenglonFactura[];
+  /** Última línea de la columna descripción ("LOCACION: POZO SBC-37"). */
+  locacion: string;
+  estado: EstadoPreFactura;
+  reporteIds: number[];
+}
+
+export type EstadoFactura = "pendiente" | "cobrada";
+
+/** Factura fiscal en Bs, creada siempre desde una pre-factura. */
 export interface Factura {
-  numero: string;
-  proveedor: string;
-  fecha: string; // dd/mm/yyyy
-  monto: string; // pre-formateado es-VE
-  moneda: "$" | "Bs";
+  id: number;
+  prefacturaId: number;
+  /** Manuales: deben coincidir con el talonario fiscal pre-impreso. */
+  numeroFactura: string;
+  numeroControl: string;
+  fechaEmision: string; // ISO
+  clienteId: number;
+  /** Tasa Bs/USD congelada al generar (conversión por precio unitario). */
+  tasaBs: number;
+  renglones: RenglonFactura[]; // pUnit en Bs
+  locacion: string;
+  condicionesPago: string;
   estado: EstadoFactura;
-  tipo: "Emitida" | "Recibida";
+}
+
+/* ---------------- Gestión de compras ---------------- */
+
+export interface Proveedor {
+  id: number;
+  razonSocial: string;
+  rif: string;
+  direccion: string;
+  /** Tipo de proveedor (texto libre: Repuestos, Servicios…). */
+  tipo: string;
+}
+
+export type EstadoCompra = "pendiente" | "pagada";
+
+/** Tipo de transacción del libro fiscal (01-Registro, 02-Complemento, 03-Anulación). */
+export type TipoTransaccionCompra = "01" | "02" | "03";
+
+/** Factura de compra recibida de un proveedor. Montos en Bs. */
+export interface FacturaRecibida {
+  id: number;
+  proveedorId: number;
+  numeroFactura: string;
+  numeroControl: string;
+  fecha: string; // ISO (fecha del documento)
+  notaDebito?: string;
+  notaCredito?: string;
+  facturaAfectada?: string;
+  tipoTransaccion: TipoTransaccionCompra;
+  totalConIvaBs: number;
+  /** Compras sin derecho a crédito fiscal (default 0). */
+  sinCreditoBs: number;
+  baseImponibleBs: number;
+  impuestoIvaBs: number;
+  estado: EstadoCompra;
+  /** Object URL del PDF subido (vive solo la sesión, fase mock). */
+  pdfUrl?: string;
+  pdfNombre?: string;
+  /** Retención IVA generada sobre esta factura (si existe). */
+  retencionId?: number;
+}
+
+/** Línea de detalle de un comprobante de retención (montos numéricos en Bs). */
+export interface RetencionLinea {
+  numOp: number;
+  fechaDoc: string; // ISO
+  numFactura: string;
+  numControl: string;
+  notaDebito?: string;
+  notaCredito?: string;
+  facturaAfectada?: string;
+  tipoTransaccion: TipoTransaccionCompra;
+  totalConIvaBs: number;
+  sinCreditoBs: number;
+  baseImponibleBs: number;
+  impuestoIvaBs: number;
+  ivaRetenidoBs: number;
+}
+
+/** Comprobante de retención de IVA (Providencia SNAT/2025/000054). */
+export interface Retencion {
+  id: number;
+  /** AAAAMM + correlativo de 8 dígitos (ej. "20260700000061"), editable. */
+  comprobante: string;
+  fechaEmision: string; // ISO
+  periodoAnio: number;
+  periodoMes: number; // 1-12
+  proveedorId: number;
+  pct: PorcentajeRetencion;
+  facturaRecibidaId?: number;
+  lineas: RetencionLinea[];
+  totalConIvaBs: number;
+  totalSinCreditoBs: number;
+  totalBaseBs: number;
+  totalImpuestoBs: number;
+  totalRetenidoBs: number;
+}
+
+/* ---------------- Plantilla de impresión (factura fiscal) ---------------- */
+
+export interface PosicionMm {
+  x: number;
+  y: number;
+}
+
+export type CampoPlantilla =
+  | "razonSocial"
+  | "fecha"
+  | "domicilio"
+  | "telefono"
+  | "rif"
+  | "condiciones"
+  | "renglones" // origen del área de renglones (x = columna CAN)
+  | "alicuota" // el "16" del % de IVA
+  | "subtotal"
+  | "iva"
+  | "total";
+
+/** Offsets en mm para imprimir SOLO los datos sobre el papel fiscal pre-impreso. */
+export interface CalibracionPlantilla {
+  campos: Record<CampoPlantilla, PosicionMm>;
+  /** Offset global de página (se suma a todos los campos). */
+  global: PosicionMm;
+  alturaFilaMm: number;
+  /** Columnas del área de renglones: descripción (izq.) y montos (borde derecho). */
+  colDescXMm: number;
+  colPUnitXMm: number;
+  colTotalXMm: number;
 }
 
 /* ---------------- Nómina ---------------- */

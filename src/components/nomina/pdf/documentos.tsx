@@ -56,7 +56,7 @@ export interface EmpInfo {
   cargo?: string;
   dpto?: string;
   base?: number;
-  banco?: DetallePago["banco"];
+  
 }
 
 /**
@@ -64,9 +64,9 @@ export interface EmpInfo {
  * empleado vigente por id o nombre. Campos ausentes se imprimen como "—".
  */
 export function datosEmpleado(d: DetallePago, empleados: Empleado[]): EmpInfo {
-  if (d.banco) return { cargo: d.cargo, dpto: d.dpto, base: d.base, banco: d.banco };
+  if (d.banco) return { cargo: d.cargo, dpto: d.dpto, base: d.base, };
   const e = empleados.find((x) => (d.empId != null ? x.id === d.empId : x.nombre === d.nombre));
-  return e ? { cargo: e.cargo, dpto: e.dpto, base: e.base, banco: e.banco } : {};
+  return e ? { cargo: e.cargo, dpto: e.dpto, base: e.base}: {};
 }
 
 const o = (v: string | undefined) => v || "—";
@@ -147,14 +147,6 @@ export function ReciboPage({
       <FilaDato etiqueta="Cargo" valor={o(info.cargo)} />
       <FilaDato etiqueta="Departamento" valor={o(info.dpto)} />
       <FilaDato etiqueta="Categoría de pago" valor={pago.categoria} />
-
-      <Text style={s.seccion}>Datos bancarios</Text>
-      <FilaDato etiqueta="Banco" valor={o(info.banco?.banco)} />
-      <FilaDato etiqueta="Tipo de cuenta" valor={o(info.banco?.tipo)} />
-      <FilaDato etiqueta="Número de cuenta" valor={o(info.banco?.cuenta)} />
-      <FilaDato etiqueta="Titular" valor={o(info.banco?.titular)} />
-      <FilaDato etiqueta="Cédula del titular" valor={o(info.banco?.cedula)} />
-      <FilaDato etiqueta="Pago móvil" valor={o(info.banco?.pagomovil)} />
 
       <Text style={s.seccion}>Detalle del pago</Text>
       <FilaDato etiqueta="Días del período" valor={String(d.dias)} />

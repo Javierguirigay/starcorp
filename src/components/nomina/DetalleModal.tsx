@@ -5,7 +5,7 @@ import { Eye, FileDown, Files, Table2 } from "lucide-react";
 import type { Empleado, PagoHistorial } from "@/lib/types";
 import { formatFechaVE, money } from "@/lib/format";
 import { Modal } from "@/components/ui/Modal";
-import { descargarBlob } from "./pdf/descargar";
+import { descargarBlob } from "@/components/pdf/descargar";
 
 export function DetalleModal({
   pago,
@@ -44,7 +44,7 @@ export function DetalleModal({
     try {
       const [docs, { generarPdfBlob, periodoSlug, slug }] = await Promise.all([
         import("./pdf/documentos"),
-        import("./pdf/descargar"),
+        import("@/components/pdf/descargar"),
       ]);
       const periodo = periodoSlug(pago);
       let doc: React.ReactElement;

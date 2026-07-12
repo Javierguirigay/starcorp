@@ -9,7 +9,6 @@ export type Area =
   | "nomina"
   | "finanzas"
   | "facturas"
-  | "retenciones"
   | "inventario"
   | "equipos"
   | "mantenimiento";
