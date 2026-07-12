@@ -89,6 +89,8 @@ export function derivarMontosFacturaRecibida(
 
 export interface FilaLibroCompras {
   numOp: number;
+  /** Factura recibida que origina la fila (para editarla/eliminarla desde el libro). */
+  compraId: number;
   fecha: string; // ISO
   rif: string;
   proveedor: string;
@@ -122,6 +124,7 @@ export function filasLibroCompras(
       const ret = retenciones.find((r) => r.id === c.retencionId);
       return {
         numOp: i + 1,
+        compraId: c.id,
         fecha: c.fecha,
         rif: p?.rif ?? "—",
         proveedor: p?.razonSocial ?? "—",

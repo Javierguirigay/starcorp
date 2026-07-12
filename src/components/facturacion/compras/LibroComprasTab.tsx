@@ -5,16 +5,21 @@
  * retenciones para la columna "IVA Retenido a terceros"), con cortes
  * quincenales, bloque RESUMEN como el formato real y exportación PDF
  * horizontal por corte.
+ * Además permite dar de alta compras desde aquí (típicamente las que no
+ * llevan retención): son facturas recibidas normales, así que la fila cae
+ * ordenada por fecha y renumera el OPER-NRO. Editar/eliminar solo mientras la
+ * compra siga pendiente y sin retención (misma regla que el resto de la app).
  */
 import { useEffect, useState } from "react";
-import { FileDown } from "lucide-react";
+import { FileDown, Pencil, Plus, Trash2 } from "lucide-react";
 import { formatFechaVE, formatNumberVE } from "@/lib/format";
 import { filasLibroCompras, resumenLibroCompras } from "@/lib/negocio/compras";
-import { etiquetaQuincena, rangoQuincena } from "@/lib/negocio/quincenas";
+import { enRango, etiquetaQuincena, rangoQuincena } from "@/lib/negocio/quincenas";
 import { MESES } from "@/lib/negocio/retenciones";
 import { Toast } from "@/components/ui/Toast";
 import { useFacturacion } from "../FacturacionProvider";
 import { PdfPreviewModal, type PreviewPdf } from "../PdfPreviewModal";
+import { FacturaRecibidaModal } from "./FacturaRecibidaModal";
 
 const selectCls =
   "rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100";
@@ -28,6 +33,8 @@ export function LibroComprasTab() {
   const [preview, setPreview] = useState<PreviewPdf | null>(null);
   const [generando, setGenerando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // { id: null } = alta; { id } = edición de esa compra.
+  const [modal, setModal] = useState<{ id: number | null } | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -39,6 +46,25 @@ export function LibroComprasTab() {
   const filas = filasLibroCompras(fac.facturasRecibidas, fac.retenciones, fac.proveedores, rango);
   const resumen = resumenLibroCompras(filas);
   const periodo = etiquetaQuincena(anio, mes, quincena);
+
+  /** Pagadas o con retención generada quedan congeladas (regla del provider). */
+  const compraEditable = (compraId: number) => {
+    const c = fac.facturasRecibidas.find((x) => x.id === compraId);
+    return !!c && c.estado === "pendiente" && !c.retencionId;
+  };
+
+  const eliminar = (compraId: number, numeroFactura: string) => {
+    if (!confirm(`¿Eliminar la compra de la factura N° ${numeroFactura}?`)) return;
+    fac.eliminarFacturaRecibida(compraId);
+    setToast("Compra eliminada");
+  };
+
+  // La compra puede guardarse con una fecha de otro corte: se avisa para que no
+  // parezca que se perdió.
+  const alGuardar = (fechaGuardada: string) => {
+    if (!enRango(fechaGuardada, rango))
+      setToast("Guardada, pero su fecha cae en otro corte: cambia el período para verla");
+  };
 
   const exportar = async () => {
     if (generando) return;
@@ -74,13 +100,21 @@ export function LibroComprasTab() {
               Auto-alimentado por facturas recibidas y retenciones · cortes quincenales
             </p>
           </div>
-          <button
-            onClick={exportar}
-            disabled={generando}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-600 text-navy-700 hover:bg-slate-50 disabled:opacity-50"
-          >
-            <FileDown className="h-4 w-4" /> Exportar PDF del corte
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={exportar}
+              disabled={generando}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-600 text-navy-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <FileDown className="h-4 w-4" /> Exportar PDF del corte
+            </button>
+            <button
+              onClick={() => setModal({ id: null })}
+              className="inline-flex items-center gap-2 rounded-xl bg-navy-900 px-4 py-2 text-sm font-600 text-white hover:bg-navy-800"
+            >
+              <Plus className="h-[18px] w-[18px]" /> Agregar compra
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-end gap-3 border-b border-slate-100 px-5 py-4">
@@ -133,18 +167,19 @@ export function LibroComprasTab() {
                 <th className="px-2 py-3 text-center font-600">% Alíc.</th>
                 <th className="px-2 py-3 text-right font-600">Impuesto IVA</th>
                 <th className="px-2 py-3 text-right font-600">IVA Retenido</th>
+                <th className="px-2 py-3 font-600"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {filas.length === 0 ? (
                 <tr>
-                  <td colSpan={16} className="px-4 py-10 text-center text-sm text-slate-400">
+                  <td colSpan={17} className="px-4 py-10 text-center text-sm text-slate-400">
                     No hay compras registradas en este corte.
                   </td>
                 </tr>
               ) : (
                 filas.map((f) => (
-                  <tr key={f.numOp} className="hover:bg-slate-50/60">
+                  <tr key={f.numOp} className="group hover:bg-slate-50/60">
                     <td className="px-2 py-2 text-center font-mono text-slate-500">{f.numOp}</td>
                     <td className="whitespace-nowrap px-2 py-2 font-mono text-slate-500">
                       {formatFechaVE(f.fecha)}
@@ -173,6 +208,26 @@ export function LibroComprasTab() {
                     <td className="px-2 py-2 text-right font-mono font-600 text-navy-950">
                       {f.ivaRetenidoBs ? formatNumberVE(f.ivaRetenidoBs) : "—"}
                     </td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right">
+                      {compraEditable(f.compraId) && (
+                        <span className="inline-flex gap-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+                          <button
+                            onClick={() => setModal({ id: f.compraId })}
+                            title="Editar compra"
+                            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-navy-700"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => eliminar(f.compraId, f.numeroFactura)}
+                            title="Eliminar compra"
+                            className="rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 ))
               )}
@@ -192,6 +247,7 @@ export function LibroComprasTab() {
                   <td className="px-2 py-2.5 text-right font-mono text-navy-950">
                     {formatNumberVE(resumen.totalIvaRetenido)}
                   </td>
+                  <td />
                 </tr>
               </tfoot>
             )}
@@ -228,6 +284,17 @@ export function LibroComprasTab() {
         )}
       </section>
 
+      {modal && (
+        <FacturaRecibidaModal
+          key={modal.id ?? "nueva"}
+          compra={modal.id ? (fac.facturasRecibidas.find((c) => c.id === modal.id) ?? null) : null}
+          proveedorLibre
+          fechaInicial={rango.desde}
+          onGuardado={alGuardar}
+          onToast={setToast}
+          onClose={() => setModal(null)}
+        />
+      )}
       {preview && (
         <PdfPreviewModal preview={preview} onToast={setToast} onClose={() => setPreview(null)} />
       )}

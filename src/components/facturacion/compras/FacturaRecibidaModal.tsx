@@ -5,6 +5,10 @@
  * cálculo automático de IVA entre los 4 campos (el último editado manda):
  *   impuestoIVA = base × 16%; total = base + impuesto + compraSinDerechoACredito;
  *   editar el total invierte: base = (total − sinCredito) / 1,16.
+ *
+ * Con `proveedorLibre` (alta desde el Libro de Compras) el selector de
+ * proveedores se sustituye por RIF + razón social escritos a mano: al guardar
+ * se reutiliza el proveedor con ese RIF o se crea uno nuevo.
  */
 import { useRef, useState } from "react";
 import { Plus, UploadCloud } from "lucide-react";
@@ -22,19 +26,32 @@ const inputCls =
 
 export function FacturaRecibidaModal({
   compra,
+  proveedorLibre = false,
+  fechaInicial,
+  onGuardado,
   onToast,
   onClose,
 }: {
   compra: FacturaRecibida | null;
+  /** Escribir RIF + razón social en vez de elegir de la lista de proveedores. */
+  proveedorLibre?: boolean;
+  /** Fecha por defecto en el alta (el libro pasa el inicio del corte visible). */
+  fechaInicial?: string;
+  /** Fecha con la que quedó guardada (el libro avisa si cae fuera del corte). */
+  onGuardado?: (fecha: string) => void;
   onToast: (msg: string) => void;
   onClose: () => void;
 }) {
   const fac = useFacturacion();
+  const proveedorDeCompra = compra ? fac.proveedorPorId(compra.proveedorId) : undefined;
 
   const [proveedorId, setProveedorId] = useState<number | "">(compra?.proveedorId ?? "");
+  const [rif, setRif] = useState(proveedorDeCompra?.rif ?? "");
+  const [razonSocial, setRazonSocial] = useState(proveedorDeCompra?.razonSocial ?? "");
   const [numeroFactura, setNumeroFactura] = useState(compra?.numeroFactura ?? "");
   const [numeroControl, setNumeroControl] = useState(compra?.numeroControl ?? "");
-  const [fecha, setFecha] = useState(compra?.fecha ?? fmtISO(new Date()));
+  const [fecha, setFecha] = useState(compra?.fecha ?? fechaInicial ?? fmtISO(new Date()));
+  const [fechaVencimiento, setFechaVencimiento] = useState(compra?.fechaVencimiento ?? "");
   const [notaDebito, setNotaDebito] = useState(compra?.notaDebito ?? "");
   const [notaCredito, setNotaCredito] = useState(compra?.notaCredito ?? "");
   const [facturaAfectada, setFacturaAfectada] = useState(compra?.facturaAfectada ?? "");
@@ -112,8 +129,24 @@ export function FacturaRecibidaModal({
     onClose();
   };
 
+  /** Proveedor del RIF escrito: se reutiliza el existente o se crea al vuelo.
+      El id del nuevo se conoce antes de despachar (patrón de ProveedorModal). */
+  const resolverProveedorPorRif = (): number => {
+    const rifNorm = rif.trim().toUpperCase();
+    const existente = fac.proveedores.find((p) => p.rif.trim().toUpperCase() === rifNorm);
+    if (existente) return existente.id;
+    const id = fac.nextProveedorId;
+    fac.crearProveedor({ razonSocial: razonSocial.trim(), rif: rif.trim(), direccion: "", tipo: "" });
+    return id;
+  };
+
   const guardar = () => {
-    if (proveedorId === "") return onToast("Selecciona el proveedor");
+    if (proveedorLibre) {
+      if (!rif.trim()) return onToast("Indica el RIF del proveedor");
+      if (!razonSocial.trim()) return onToast("Indica el nombre o razón social");
+    } else if (proveedorId === "") {
+      return onToast("Selecciona el proveedor");
+    }
     if (!numeroFactura.trim()) return onToast("Indica el N° de factura");
     if (!numeroControl.trim()) return onToast("Indica el N° de control");
     if (!fecha) return onToast("Indica la fecha del documento");
@@ -123,13 +156,14 @@ export function FacturaRecibidaModal({
     if (base <= 0) return onToast("Indica la base imponible (o el total con IVA)");
     if (total <= 0) return onToast("Indica el total de compras con IVA");
     const datos = {
-      proveedorId,
+      proveedorId: proveedorLibre ? resolverProveedorPorRif() : (proveedorId as number),
       numeroFactura: numeroFactura.trim(),
       numeroControl: numeroControl.trim(),
       fecha,
       ...(notaDebito.trim() ? { notaDebito: notaDebito.trim() } : {}),
       ...(notaCredito.trim() ? { notaCredito: notaCredito.trim() } : {}),
       ...(facturaAfectada.trim() ? { facturaAfectada: facturaAfectada.trim() } : {}),
+      ...(fechaVencimiento ? { fechaVencimiento } : {}),
       tipoTransaccion,
       totalConIvaBs: total,
       sinCreditoBs: round2(parseVES(sinCreditoTexto)),
@@ -144,6 +178,7 @@ export function FacturaRecibidaModal({
       fac.crearFacturaRecibida(datos);
       onToast("Factura recibida registrada");
     }
+    onGuardado?.(fecha);
     cerrar(pdfUrl);
   };
 
@@ -191,27 +226,53 @@ export function FacturaRecibidaModal({
 
           {/* Formulario */}
           <div className="space-y-3">
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <label className="block text-sm font-600 text-navy-900">Proveedor</label>
-                <button
-                  onClick={() => setModalProveedor(true)}
-                  className="inline-flex items-center gap-1 text-xs font-600 text-navy-700 hover:text-navy-900"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Nuevo proveedor
-                </button>
+            {proveedorLibre ? (
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-600 text-navy-900">RIF</label>
+                  <input
+                    type="text"
+                    value={rif}
+                    onChange={(e) => setRif(e.target.value)}
+                    placeholder="J-00000000-0"
+                    className={`${inputCls} font-mono`}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="mb-1 block text-sm font-600 text-navy-900">
+                    Nombre o Razón Social
+                  </label>
+                  <input
+                    type="text"
+                    value={razonSocial}
+                    onChange={(e) => setRazonSocial(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
               </div>
-              <select
-                value={proveedorId}
-                onChange={(e) => setProveedorId(e.target.value === "" ? "" : Number(e.target.value))}
-                className={inputCls}
-              >
-                <option value="">Selecciona…</option>
-                {fac.proveedores.map((p) => (
-                  <option key={p.id} value={p.id}>{p.razonSocial}</option>
-                ))}
-              </select>
-            </div>
+            ) : (
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="block text-sm font-600 text-navy-900">Proveedor</label>
+                  <button
+                    onClick={() => setModalProveedor(true)}
+                    className="inline-flex items-center gap-1 text-xs font-600 text-navy-700 hover:text-navy-900"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Nuevo proveedor
+                  </button>
+                </div>
+                <select
+                  value={proveedorId}
+                  onChange={(e) => setProveedorId(e.target.value === "" ? "" : Number(e.target.value))}
+                  className={inputCls}
+                >
+                  <option value="">Selecciona…</option>
+                  {fac.proveedores.map((p) => (
+                    <option key={p.id} value={p.id}>{p.razonSocial}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="grid grid-cols-3 gap-3">
               <div>
@@ -243,13 +304,27 @@ export function FacturaRecibidaModal({
               </div>
             </div>
 
-            <div>
-              <label className="mb-1 block text-sm font-600 text-navy-900">Tipo de transacción</label>
-              <select value={tipoTransaccion} onChange={(e) => setTipoTransaccion(e.target.value as TipoTransaccionCompra)} className={inputCls}>
-                <option value="01">01 — Registro</option>
-                <option value="02">02 — Complemento</option>
-                <option value="03">03 — Anulación</option>
-              </select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-sm font-600 text-navy-900">Tipo de transacción</label>
+                <select value={tipoTransaccion} onChange={(e) => setTipoTransaccion(e.target.value as TipoTransaccionCompra)} className={inputCls}>
+                  <option value="01">01 — Registro</option>
+                  <option value="02">02 — Complemento</option>
+                  <option value="03">03 — Anulación</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-600 text-navy-900">
+                  Vence el <span className="font-400 text-slate-400">(opcional)</span>
+                </label>
+                <input
+                  type="date"
+                  value={fechaVencimiento}
+                  onChange={(e) => setFechaVencimiento(e.target.value)}
+                  title="Fecha pactada de pago (Cuentas por Pagar)"
+                  className={inputCls}
+                />
+              </div>
             </div>
 
             <div className="rounded-xl border border-slate-200 p-3">
