@@ -7,8 +7,8 @@ import { EMPRESAS } from "./empresas";
 import { TASA_INICIAL } from "./empleados";
 
 /* Pestañas del módulo Finanzas: Grupo + una por empresa del conglomerado.
-   Activar una empresa nueva = habilitar aquí su pestaña y añadir sus
-   categorías por defecto (incluidas las de sistema) a CATEGORIAS_SEED. */
+   Activar una empresa nueva = ponerla con activa:true en EMPRESAS; su pestaña
+   y sus categorías por defecto (CATEGORIAS_BASE) se generan solas. */
 export interface FinanzasTab {
   key: string; // 'grupo' | Empresa.key
   label: string;
@@ -24,18 +24,29 @@ export const FINANZAS_TABS: FinanzasTab[] = [
   })),
 ];
 
-/* Categorías por defecto de LOTER. Las de sistema (protegidas) reciben los
-   movimientos automáticos de nómina y transferencias del grupo. */
-export const CATEGORIAS_SEED: CategoriaFinanciera[] = [
-  { id: 1, nombre: "Gastos Administrativos", tipo: "salida", empresaId: "loter" },
-  { id: 2, nombre: "Nómina", tipo: "salida", empresaId: "loter", protegida: true, sistema: "nomina" },
-  { id: 3, nombre: "Gastos Operativos", tipo: "salida", empresaId: "loter" },
-  { id: 4, nombre: "Gastos Personales del Dueño", tipo: "salida", empresaId: "loter" },
-  { id: 5, nombre: "Ingresos por Servicios / Operaciones", tipo: "entrada", empresaId: "loter", protegida: true, sistema: "facturas" },
-  { id: 6, nombre: "Transferencias del Grupo", tipo: "ambas", empresaId: "loter", protegida: true, sistema: "transferencias" },
+/* Categorías por defecto de cada empresa activa. Las de sistema (protegidas)
+   reciben los movimientos automáticos de nómina, facturas y transferencias
+   del grupo; sin ellas los generadores omiten a la empresa. Los ids de LOTER
+   (1-6) se preservan porque TRANSACCIONES_SEED referencia esos categoriaId. */
+const CATEGORIAS_BASE: Omit<CategoriaFinanciera, "id" | "empresaId">[] = [
+  { nombre: "Gastos Administrativos", tipo: "salida" },
+  { nombre: "Nómina", tipo: "salida", protegida: true, sistema: "nomina" },
+  { nombre: "Gastos Operativos", tipo: "salida" },
+  { nombre: "Gastos Personales del Dueño", tipo: "salida" },
+  { nombre: "Ingresos por Servicios / Operaciones", tipo: "entrada", protegida: true, sistema: "facturas" },
+  { nombre: "Transferencias del Grupo", tipo: "ambas", protegida: true, sistema: "transferencias" },
 ];
 
-export const NEXT_CATEGORIA_ID = 7;
+export const CATEGORIAS_SEED: CategoriaFinanciera[] = EMPRESAS.filter((e) => e.activa).flatMap(
+  (e, i) =>
+    CATEGORIAS_BASE.map((c, j) => ({
+      ...c,
+      id: i * CATEGORIAS_BASE.length + j + 1,
+      empresaId: e.key,
+    }))
+);
+
+export const NEXT_CATEGORIA_ID = CATEGORIAS_SEED.length + 1;
 
 /* Historial del Grupo: transcripción de MOVIMIENTOS (finanzas.php) a fechas
    ISO, montos numéricos y keys de empresa donde el extremo es del grupo. */

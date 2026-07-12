@@ -59,6 +59,8 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
   const transacciones = finanzas.transaccionesDe(empresa.key);
   const categorias = finanzas.categoriasDe(empresa.key);
   const etiqueta = empresa.nombre.replace(", C.A.", "");
+  // rif vacío (p. ej. una persona natural): se muestra solo el nombre.
+  const empresaLinea = empresa.rif ? `${empresa.nombre} — RIF ${empresa.rif}` : empresa.nombre;
 
   const [filtros, setFiltros] = useState<FiltrosTransacciones>(SIN_FILTROS);
   const [modal, setModal] = useState<ModalAbierto>(null);
@@ -118,7 +120,7 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
       const sub = subtotales(lista);
       const doc = (
         <docs.ReporteFinancieroDoc
-          empresaLinea={`${empresa.nombre} — RIF ${empresa.rif}`}
+          empresaLinea={empresaLinea}
           titulo={`Reporte Financiero — Finanzas ${etiqueta}`}
           subtitulo={`${esEntrada ? "Ingresos" : "Egresos"} · Generado el ${formatFechaVE(
             hoy
@@ -161,9 +163,7 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-display text-lg font-700 text-navy-950">Finanzas {etiqueta}</h2>
-          <p className="text-xs text-slate-400">
-            {empresa.nombre} — RIF {empresa.rif}
-          </p>
+          <p className="text-xs text-slate-400">{empresaLinea}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={() => setModal({ tipo: "categorias" })} className={btnBordeCls}>
