@@ -1,18 +1,18 @@
 "use client";
 
 /**
- * Pestaña Grupo: la vista de Finanzas original (saldos por empresa,
- * transferencias entre empresas, historial del grupo), ahora con el
- * formulario de transferencia funcional sobre el estado compartido.
- * Los saldos por tarjeta siguen siendo los strings seed de SALDOS: esta fase
- * registra historial + espejos, no contabilidad de saldos (queda para el
- * backend).
+ * Pestaña Grupo: saldos por empresa, transferencias entre empresas e historial
+ * del grupo, sobre el estado compartido.
+ * El saldo de cada tarjeta es el balance real del libro mayor de esa empresa
+ * (el mismo número que su pestaña), así que se mueve en vivo al registrar
+ * transacciones o transferencias (que generan espejos en ambos extremos).
  */
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowRight, Building2, Download, Repeat } from "lucide-react";
-import { SALDOS } from "@/lib/data/empresas";
+import { EMPRESAS } from "@/lib/data/empresas";
 import type { TipoMovimiento } from "@/lib/types";
 import { fmtISO, formatFechaVE, money, parseVES } from "@/lib/format";
+import { saldosDeEmpresas } from "@/lib/negocio/finanzas";
 import { Toast } from "@/components/ui/Toast";
 import { useFinanzas } from "./FinanzasProvider";
 
@@ -26,10 +26,12 @@ const inputCls =
   "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100";
 
 export function GrupoTab() {
-  const { movimientosGrupo, registrarTransferenciaGrupo, tasa } = useFinanzas();
+  const { movimientosGrupo, registrarTransferenciaGrupo, tasa, transacciones } = useFinanzas();
 
-  const [origenKey, setOrigenKey] = useState(SALDOS[0].key);
-  const [destinoKey, setDestinoKey] = useState(SALDOS[SALDOS.length - 1].key);
+  const saldos = saldosDeEmpresas(EMPRESAS, transacciones);
+
+  const [origenKey, setOrigenKey] = useState(EMPRESAS[0].key);
+  const [destinoKey, setDestinoKey] = useState(EMPRESAS[EMPRESAS.length - 1].key);
   const [moneda, setMoneda] = useState<"USD" | "Bs">("USD");
   const [montoTexto, setMontoTexto] = useState("");
   const [fecha, setFecha] = useState("");
@@ -90,7 +92,7 @@ export function GrupoTab() {
     <>
       {/* Saldos */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {SALDOS.map((em) => (
+        {saldos.map((em) => (
           <div
             key={em.key}
             className={`rounded-2xl border ${
@@ -106,8 +108,10 @@ export function GrupoTab() {
               </span>
               <Building2 className="h-4 w-4 text-slate-300" />
             </div>
-            <p className="mt-3 font-mono text-2xl font-600 text-navy-950">$ {em.usd}</p>
-            <p className="font-mono text-sm text-slate-400">Bs {em.bs}</p>
+            <p className="mt-3 font-mono text-2xl font-600 text-navy-950">
+              {money(em.balanceUSD)}
+            </p>
+            <p className="font-mono text-sm text-slate-400">{money(em.balanceBs, "Bs")}</p>
           </div>
         ))}
       </div>
@@ -135,7 +139,7 @@ export function GrupoTab() {
                 onChange={(e) => setOrigenKey(e.target.value)}
                 className={inputCls}
               >
-                {SALDOS.map((em) => (
+                {EMPRESAS.map((em) => (
                   <option key={em.key} value={em.key}>
                     {em.nombre}
                   </option>
@@ -156,7 +160,7 @@ export function GrupoTab() {
                 onChange={(e) => setDestinoKey(e.target.value)}
                 className={inputCls}
               >
-                {[...SALDOS].reverse().map((em) => (
+                {[...EMPRESAS].reverse().map((em) => (
                   <option key={em.key} value={em.key}>
                     {em.nombre}
                   </option>

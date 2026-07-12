@@ -6,6 +6,7 @@
 import type {
   CategoriaFinanciera,
   CategoriaSistema,
+  Empresa,
   MovimientoGrupo,
   PagoHistorial,
   TipoTransaccion,
@@ -48,6 +49,39 @@ export function calcularTotales(ts: TransaccionFinanciera[]): TotalesFinancieros
     salidasBs: salidas.bs,
     balanceUSD: round2(entradas.usd - salidas.usd),
     balanceBs: round2(entradas.bs - salidas.bs),
+  };
+}
+
+/* ---------------- Saldos por empresa ---------------- */
+
+export interface SaldoEmpresaCalculado {
+  key: string;
+  nombre: string;
+  activa: boolean;
+  balanceUSD: number;
+  balanceBs: number;
+}
+
+/**
+ * Saldo de cada empresa = balance de su propio libro mayor (entradas −
+ * salidas), el mismo número que muestra el KPI "Balance" de su pestaña.
+ * Una empresa sin transacciones queda en 0.
+ */
+export function saldosDeEmpresas(
+  empresas: Empresa[],
+  ts: TransaccionFinanciera[]
+): SaldoEmpresaCalculado[] {
+  return empresas.map((e) => {
+    const { balanceUSD, balanceBs } = calcularTotales(ts.filter((t) => t.empresaId === e.key));
+    return { key: e.key, nombre: e.nombre, activa: e.activa, balanceUSD, balanceBs };
+  });
+}
+
+/** Saldo consolidado del grupo: suma de los saldos de todas las empresas. */
+export function saldoConsolidado(saldos: SaldoEmpresaCalculado[]): { usd: number; bs: number } {
+  return {
+    usd: round2(saldos.reduce((s, e) => s + e.balanceUSD, 0)),
+    bs: round2(saldos.reduce((s, e) => s + e.balanceBs, 0)),
   };
 }
 

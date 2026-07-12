@@ -5,21 +5,23 @@ import {
   ClipboardList,
   Forklift,
   Users,
-  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { APP_NAME } from "@/lib/config";
-import { SALDOS } from "@/lib/data/empresas";
 import { MOVIMIENTOS_DASHBOARD } from "@/lib/data/movimientos";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
+import { SaldoConsolidadoKpi } from "@/components/finanzas/SaldoConsolidadoKpi";
+import { SaldosEmpresasGrid } from "@/components/finanzas/SaldosEmpresasGrid";
 
 export const metadata: Metadata = { title: `Inicio · ${APP_NAME}` };
 
-/* Datos de ejemplo (de dashboard.php) */
-const KPIS: { label: string; valor: string; sub: string; icon: LucideIcon; tone: "navy" | "gold" }[] = [
-  { label: "Empleados activos", valor: "24", sub: "18 quincenal · 6 semanal", icon: Users, tone: "navy" },
-  { label: "Saldo consolidado", valor: "$ 184.250", sub: "Bs 6.751.350 equivalente", icon: Wallet, tone: "gold" },
+/* Datos de ejemplo (de dashboard.php). El saldo consolidado ya no vive aquí:
+   se calcula desde el libro mayor (SaldoConsolidadoKpi). */
+type Kpi = { label: string; valor: string; sub: string; icon: LucideIcon; tone: "navy" | "gold" };
+
+const KPI_EMPLEADOS: Kpi = { label: "Empleados activos", valor: "24", sub: "18 quincenal · 6 semanal", icon: Users, tone: "navy" };
+const KPIS_OPERACIONES: Kpi[] = [
   { label: "Equipos en locación", valor: "6 / 9", sub: "3 disponibles en patio", icon: Forklift, tone: "navy" },
   { label: "Asignaciones activas", valor: "3", sub: "Pozos SBC-37", icon: ClipboardList, tone: "navy" },
 ];
@@ -43,8 +45,10 @@ export default function DashboardPage() {
       <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
         {/* KPIs */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {KPIS.map((k) => (
-            <KpiCard key={k.label} label={k.label} valor={k.valor} sub={k.sub} icon={k.icon} tone={k.tone} />
+          <KpiCard {...KPI_EMPLEADOS} />
+          <SaldoConsolidadoKpi />
+          {KPIS_OPERACIONES.map((k) => (
+            <KpiCard key={k.label} {...k} />
           ))}
         </div>
 
@@ -54,7 +58,9 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
                 <h2 className="font-display text-base font-700 text-navy-950">Saldos por empresa</h2>
-                <p className="text-xs text-slate-400">Bolívares y dólares · datos de ejemplo</p>
+                <p className="text-xs text-slate-400">
+                  Balance del libro mayor de cada empresa · dólares y bolívares
+                </p>
               </div>
               <Link
                 href="/loter/administracion/finanzas"
@@ -63,25 +69,7 @@ export default function DashboardPage() {
                 Ir a Finanzas <ArrowUpRight className="h-4 w-4" />
               </Link>
             </div>
-            <div className="grid grid-cols-1 gap-px bg-slate-100 sm:grid-cols-2">
-              {SALDOS.map((s) => (
-                <div key={s.key} className="bg-white p-5">
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-sm font-600 text-navy-900">
-                      <span className={`h-2 w-2 rounded-full ${s.activa ? "bg-emerald-500" : "bg-slate-300"}`}></span>
-                      {s.nombre}
-                    </span>
-                    {s.activa && (
-                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-600 text-emerald-700">
-                        Activa
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-3 font-mono text-2xl font-600 text-navy-950">$ {s.usd}</p>
-                  <p className="font-mono text-sm text-slate-400">Bs {s.bs}</p>
-                </div>
-              ))}
-            </div>
+            <SaldosEmpresasGrid />
           </section>
 
           {/* Estado de equipos */}
