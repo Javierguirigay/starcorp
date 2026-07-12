@@ -20,15 +20,6 @@ export interface Empresa {
   activa: boolean;
 }
 
-/** Saldos de ejemplo por empresa (strings pre-formateados, como en el boceto). */
-export interface SaldoEmpresa {
-  key: string;
-  nombre: string;
-  usd: string;
-  bs: string;
-  activa: boolean;
-}
-
 /* ---------------- Equipos e inventario ---------------- */
 
 export type CategoriaEquipo = "petrolero" | "oficina" | "herramienta" | "vehiculo";
@@ -232,6 +223,8 @@ export interface Factura {
   renglones: RenglonFactura[]; // pUnit en Bs
   locacion: string;
   condicionesPago: string;
+  /** Fecha pactada de cobro (ISO). Sin ella la factura no vence. */
+  fechaVencimiento?: string;
   estado: EstadoFactura;
 }
 
@@ -267,6 +260,8 @@ export interface FacturaRecibida {
   sinCreditoBs: number;
   baseImponibleBs: number;
   impuestoIvaBs: number;
+  /** Fecha pactada de pago (ISO). Sin ella la compra no vence. */
+  fechaVencimiento?: string;
   estado: EstadoCompra;
   /** Object URL del PDF subido (vive solo la sesión, fase mock). */
   pdfUrl?: string;
@@ -309,6 +304,43 @@ export interface Retencion {
   totalBaseBs: number;
   totalImpuestoBs: number;
   totalRetenidoBs: number;
+}
+
+/* ---------------- Gestión de órdenes ---------------- */
+
+export type TipoOrden = "compra" | "entrega" | "requerimiento";
+
+/** Renglón de una orden. precioUnitBs solo aplica a la orden de compra. */
+export interface RenglonOrden {
+  cantidad: number;
+  unidad: string;
+  descripcion: string;
+  precioUnitBs?: number;
+}
+
+/**
+ * Orden de compra / entrega / requerimiento. Un solo tipo con discriminante:
+ * comparten cabecera, renglones y firmas; los campos propios de cada tipo son
+ * opcionales (condicionesPago en compra, locacion/transporte en entrega,
+ * motivo en requerimiento).
+ */
+export interface Orden {
+  id: number;
+  tipo: TipoOrden;
+  numero: string; // OC-0001 / OE-0001 / OR-0001
+  fecha: string; // ISO
+  /** Proveedor (compra), destinatario (entrega) o solicitante (requerimiento). */
+  contraparteNombre: string;
+  contraparteRif?: string;
+  renglones: RenglonOrden[];
+  observaciones?: string;
+  elaboradoPor: string;
+  aprobadoPor?: string;
+  recibidoPor?: string;
+  condicionesPago?: string; // compra
+  locacion?: string; // entrega
+  transporte?: string; // entrega
+  motivo?: string; // requerimiento
 }
 
 /* ---------------- Plantilla de impresión (factura fiscal) ---------------- */

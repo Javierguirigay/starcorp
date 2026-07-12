@@ -4,19 +4,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Building2,
+  ClipboardCheck,
   ClipboardList,
   FileText,
   Forklift,
   LayoutDashboard,
   LogOut,
   Package,
+  Scale,
   Users,
   Wallet,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { APP_VERSION, USUARIO_ACTUAL } from "@/lib/config";
-import { OTRAS_EMPRESAS } from "@/lib/data/empresas";
+import { EMPRESAS } from "@/lib/data/empresas";
 import { puede } from "@/lib/permissions";
 import { LogoMark } from "@/components/ui/LogoMark";
 
@@ -50,12 +52,17 @@ export function Sidebar() {
   const pathname = usePathname();
   const rol = USUARIO_ACTUAL.rol;
 
-  const activeKey = (item: Item) => pathname === item.href;
+  // startsWith y no igualdad: los módulos con secciones redirigen a la primera
+  // (/control-administrativo → /control-administrativo/por-cobrar) y el item
+  // debe seguir resaltado. Ninguna ruta del menú es prefijo de otra.
+  const activeKey = (item: Item) => pathname.startsWith(item.href);
 
   const adminItems: { item: Item; visible: boolean }[] = [
     { visible: puede(rol, "nomina"), item: { key: "nomina", href: `${ADMIN_BASE}/nomina`, label: "Nómina del personal", icon: Users } },
     { visible: puede(rol, "finanzas"), item: { key: "finanzas", href: `${ADMIN_BASE}/finanzas`, label: "Finanzas", icon: Wallet } },
     { visible: puede(rol, "facturas"), item: { key: "facturas", href: `${ADMIN_BASE}/facturas`, label: "Facturación y Compras", icon: FileText } },
+    { visible: puede(rol, "control-administrativo"), item: { key: "control", href: `${ADMIN_BASE}/control-administrativo`, label: "Control Administrativo", icon: Scale } },
+    { visible: puede(rol, "ordenes"), item: { key: "ordenes", href: `${ADMIN_BASE}/gestion-ordenes`, label: "Gestión de Órdenes", icon: ClipboardCheck } },
     { visible: puede(rol, "inventario"), item: { key: "inventario", href: `${ADMIN_BASE}/inventario`, label: "Inventario", icon: Package } },
     { visible: puede(rol, "inventario"), item: { key: "equipos", href: `${ADMIN_BASE}/equipos`, label: "Equipos", icon: Forklift } },
     { visible: puede(rol, "inventario"), item: { key: "mantenimiento", href: `${ADMIN_BASE}/mantenimiento`, label: "Mantenimiento", icon: Wrench } },
@@ -125,23 +132,27 @@ export function Sidebar() {
           </>
         )}
 
-        {/* Otras empresas (próximamente) */}
-        <p className="mt-5 px-3 pb-2 text-[10px] font-600 uppercase tracking-[0.18em] text-slate-500">
-          Otras empresas
-        </p>
-        {OTRAS_EMPRESAS.map((emp) => (
-          <div
-            key={emp}
-            className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-500"
-          >
-            <span className="flex items-center gap-3">
-              <Building2 className="h-[18px] w-[18px]" /> {emp}
-            </span>
-            <span className="rounded-full bg-navy-800 px-2 py-0.5 text-[9px] font-600 uppercase tracking-wide text-slate-400">
-              Pronto
-            </span>
-          </div>
-        ))}
+        {/* Empresas aún no activas (hoy ninguna: la sección se oculta sola). */}
+        {EMPRESAS.some((e) => !e.activa) && (
+          <>
+            <p className="mt-5 px-3 pb-2 text-[10px] font-600 uppercase tracking-[0.18em] text-slate-500">
+              Otras empresas
+            </p>
+            {EMPRESAS.filter((e) => !e.activa).map((e) => (
+              <div
+                key={e.key}
+                className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-500"
+              >
+                <span className="flex items-center gap-3">
+                  <Building2 className="h-[18px] w-[18px]" /> {e.nombre}
+                </span>
+                <span className="rounded-full bg-navy-800 px-2 py-0.5 text-[9px] font-600 uppercase tracking-wide text-slate-400">
+                  Pronto
+                </span>
+              </div>
+            ))}
+          </>
+        )}
       </nav>
 
       {/* Pie del menú */}

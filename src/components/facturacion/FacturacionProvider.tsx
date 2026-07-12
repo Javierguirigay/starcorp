@@ -95,6 +95,9 @@ type Accion =
   | { tipo: "editarFacturaRecibida"; id: number; datos: FacturaRecibidaDatos }
   | { tipo: "eliminarFacturaRecibida"; id: number }
   | { tipo: "marcarCompraPagada"; id: number }
+  // Vencimiento editable desde la cartera (Control Administrativo).
+  | { tipo: "setVencimientoFactura"; id: number; fecha: string }
+  | { tipo: "setVencimientoCompra"; id: number; fecha: string }
   | { tipo: "crearRetencion"; datos: RetencionDatos }
   | { tipo: "eliminarRetencion"; id: number }
   | { tipo: "setCalibracionCampo"; campo: CampoPlantilla; pos: PosicionMm }
@@ -278,6 +281,23 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
         ),
       };
 
+    // Fecha vacía ⇒ se quita el vencimiento (la cuenta deja de vencer).
+    case "setVencimientoFactura":
+      return {
+        ...estado,
+        facturas: estado.facturas.map((f) =>
+          f.id === accion.id ? { ...f, fechaVencimiento: accion.fecha || undefined } : f
+        ),
+      };
+
+    case "setVencimientoCompra":
+      return {
+        ...estado,
+        facturasRecibidas: estado.facturasRecibidas.map((c) =>
+          c.id === accion.id ? { ...c, fechaVencimiento: accion.fecha || undefined } : c
+        ),
+      };
+
     case "crearRetencion": {
       // Comprobante único y, si nace de una factura, esta no debe tener otra.
       if (estado.retenciones.some((r) => r.comprobante === accion.datos.comprobante))
@@ -359,6 +379,8 @@ interface FacturacionContexto {
   editarFacturaRecibida: (id: number, datos: FacturaRecibidaDatos) => void;
   eliminarFacturaRecibida: (id: number) => void;
   marcarCompraPagada: (id: number) => void;
+  setVencimientoFactura: (id: number, fecha: string) => void;
+  setVencimientoCompra: (id: number, fecha: string) => void;
   crearRetencion: (datos: RetencionDatos) => void;
   eliminarRetencion: (id: number) => void;
   setCalibracionCampo: (campo: CampoPlantilla, pos: PosicionMm) => void;
@@ -409,6 +431,8 @@ export function FacturacionProvider({ children }: { children: React.ReactNode })
         dispatch({ tipo: "editarFacturaRecibida", id, datos }),
       eliminarFacturaRecibida: (id) => dispatch({ tipo: "eliminarFacturaRecibida", id }),
       marcarCompraPagada: (id) => dispatch({ tipo: "marcarCompraPagada", id }),
+      setVencimientoFactura: (id, fecha) => dispatch({ tipo: "setVencimientoFactura", id, fecha }),
+      setVencimientoCompra: (id, fecha) => dispatch({ tipo: "setVencimientoCompra", id, fecha }),
       crearRetencion: (datos) => dispatch({ tipo: "crearRetencion", datos }),
       eliminarRetencion: (id) => dispatch({ tipo: "eliminarRetencion", id }),
       setCalibracionCampo: (campo, pos) => dispatch({ tipo: "setCalibracionCampo", campo, pos }),

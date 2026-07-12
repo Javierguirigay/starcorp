@@ -1,0 +1,20 @@
+import type { Metadata } from "next";
+import { APP_NAME } from "@/lib/config";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { ControlAdministrativoModule } from "@/components/control/ControlAdministrativoModule";
+
+export const metadata: Metadata = { title: `Cuentas por Pagar · ${APP_NAME}` };
+
+export default function CuentasPorPagarPage() {
+  return (
+    <>
+      <PageHeader
+        title="Control Administrativo"
+        breadcrumb={["LOTER, C.A.", "Administración", "Control Administrativo", "Cuentas por Pagar"]}
+      />
+      <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <ControlAdministrativoModule vista="pagar" />
+      </main>
+    </>
+  );
+}
