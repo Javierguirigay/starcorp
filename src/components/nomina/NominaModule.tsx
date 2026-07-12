@@ -30,6 +30,7 @@ import {
 } from "@/lib/negocio/adelantos";
 import { construirRegistroPago } from "@/lib/negocio/pagos";
 import { useFinanzas } from "@/components/finanzas/FinanzasProvider";
+import { TasaInput } from "@/components/finanzas/TasaInput";
 import type { AdelantoSueldo, CategoriaPago, Empleado, PagoHistorial } from "@/lib/types";
 import { Toast } from "@/components/ui/Toast";
 import { Avatar, BadgeCategoria, BadgeEstatus } from "./badges";
@@ -192,7 +193,7 @@ export function NominaModule() {
   const [estado, dispatch] = useReducer(reducer, ESTADO_INICIAL);
 
   // Tasa Bs/USD global compartida con Finanzas (única en toda la app).
-  const { tasaTexto, setTasaTexto, tasa, registrarPagoNomina } = useFinanzas();
+  const { tasa, registrarPagoNomina } = useFinanzas();
 
   const [empFiltro, setEmpFiltro] = useState<FiltroCat>("todos");
   const [empBusqueda, setEmpBusqueda] = useState("");
@@ -321,23 +322,7 @@ export function NominaModule() {
       {/* Encabezado */}
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-end gap-2">
-          <div>
-            <label className="mb-1 block text-[11px] font-600 uppercase tracking-wide text-slate-400">
-              Tasa (Bs / USD)
-            </label>
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-600 text-slate-400">
-                Bs
-              </span>
-              <input
-                type="number"
-                step="0.01"
-                value={tasaTexto}
-                onChange={(e) => setTasaTexto(e.target.value)}
-                className="w-36 rounded-xl border border-slate-300 bg-white py-2.5 pl-9 pr-3 text-right font-mono text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100"
-              />
-            </div>
-          </div>
+          <TasaInput />
         </div>
         <button
           onClick={() => setModal({ tipo: "empleado", id: null })}

@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { FINANZAS_TABS } from "@/lib/data/finanzas";
 import { EMPRESAS } from "@/lib/data/empresas";
-import { useFinanzas } from "./FinanzasProvider";
+import { TasaInput } from "./TasaInput";
 import { GrupoTab } from "./GrupoTab";
 import { FinanzasEmpresa } from "./FinanzasEmpresa";
 
@@ -19,8 +19,6 @@ const tabCls = (activo: boolean) =>
 
 export function FinanzasModule() {
   const [tab, setTab] = useState<string>("grupo");
-  // Tasa Bs/USD global: la misma que usa Nómina (fuente única en el provider).
-  const { tasaTexto, setTasaTexto } = useFinanzas();
 
   const empresaActiva = EMPRESAS.find((e) => e.key === tab);
 
@@ -49,23 +47,7 @@ export function FinanzasModule() {
           )}
         </div>
 
-        <div>
-          <label className="mb-1 block text-[11px] font-600 uppercase tracking-wide text-slate-400">
-            Tasa (Bs / USD)
-          </label>
-          <div className="relative">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-600 text-slate-400">
-              Bs
-            </span>
-            <input
-              type="number"
-              step="0.01"
-              value={tasaTexto}
-              onChange={(e) => setTasaTexto(e.target.value)}
-              className="w-36 rounded-xl border border-slate-300 bg-white py-2.5 pl-9 pr-3 text-right font-mono text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100"
-            />
-          </div>
-        </div>
+        <TasaInput />
       </div>
 
       {tab === "grupo" ? (

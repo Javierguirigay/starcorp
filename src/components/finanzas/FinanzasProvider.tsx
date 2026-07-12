@@ -11,7 +11,7 @@
  * Fase mock: todo en memoria; la forma (arrays planos + empresaId) está
  * pensada para migrar a tablas con FK sin reestructurar.
  */
-import { createContext, useContext, useMemo, useReducer } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
 import type {
   CategoriaFinanciera,
   MovimientoGrupo,
@@ -43,8 +43,23 @@ import {
 
 /* ===================== Estado y acciones ===================== */
 
+/**
+ * Origen de la tasa vigente:
+ *   cargando — consultando /api/tasa-bcv;
+ *   ok       — vino del BCV (fechaISO = fecha de publicación);
+ *   manual   — el usuario la editó a mano (manda sobre el auto-fetch);
+ *   error    — BCV no disponible; se conserva el valor que hubiera.
+ * Solo afecta la tasa VIGENTE: los snapshots históricos (tasaBs/tasa de cada
+ * registro) no se tocan.
+ */
+export interface TasaBcvInfo {
+  estado: "cargando" | "ok" | "manual" | "error";
+  fechaISO?: string;
+}
+
 interface EstadoFinanzas {
   tasaTexto: string; // "36.50" — fuente única de la tasa global
+  tasaBcv: TasaBcvInfo;
   categorias: CategoriaFinanciera[];
   transacciones: TransaccionFinanciera[];
   movimientosGrupo: MovimientoGrupo[];
@@ -75,6 +90,10 @@ export interface TransferenciaDatos {
 
 type AccionFinanzas =
   | { tipo: "setTasa"; texto: string }
+  // forzar: true cuando lo pide el usuario (botón ↻) — pisa la tasa manual.
+  | { tipo: "tasaBcvCargando" }
+  | { tipo: "tasaBcvOk"; tasa: number; fechaISO: string; forzar: boolean }
+  | { tipo: "tasaBcvError"; forzar: boolean }
   | { tipo: "crearCategoria"; empresaId: string; nombre: string; tipoCategoria: TipoCategoria }
   | { tipo: "editarCategoria"; id: number; nombre: string; tipoCategoria: TipoCategoria }
   | { tipo: "eliminarCategoria"; id: number }
@@ -87,7 +106,8 @@ type AccionFinanzas =
   | { tipo: "registrarPagoCompra"; datos: PagoCompraDatos; empresaId: string };
 
 const ESTADO_INICIAL: EstadoFinanzas = {
-  tasaTexto: TASA_INICIAL.toFixed(2),
+  tasaTexto: TASA_INICIAL.toFixed(2), // fallback si el BCV no responde
+  tasaBcv: { estado: "cargando" },
   categorias: CATEGORIAS_SEED,
   transacciones: TRANSACCIONES_SEED,
   movimientosGrupo: MOVIMIENTOS_GRUPO_SEED,
@@ -109,7 +129,23 @@ function nombreEmpresa(key: string): string {
 function reducer(estado: EstadoFinanzas, accion: AccionFinanzas): EstadoFinanzas {
   switch (accion.tipo) {
     case "setTasa":
-      return { ...estado, tasaTexto: accion.texto };
+      // Edición manual: manda sobre el auto-fetch (solo ↻ explícito la pisa).
+      return { ...estado, tasaTexto: accion.texto, tasaBcv: { estado: "manual" } };
+
+    case "tasaBcvCargando":
+      return { ...estado, tasaBcv: { ...estado.tasaBcv, estado: "cargando" } };
+
+    case "tasaBcvOk":
+      if (estado.tasaBcv.estado === "manual" && !accion.forzar) return estado;
+      return {
+        ...estado,
+        tasaTexto: accion.tasa.toFixed(2),
+        tasaBcv: { estado: "ok", fechaISO: accion.fechaISO },
+      };
+
+    case "tasaBcvError":
+      if (estado.tasaBcv.estado === "manual" && !accion.forzar) return estado;
+      return { ...estado, tasaBcv: { ...estado.tasaBcv, estado: "error" } };
 
     case "crearCategoria":
       return {
@@ -274,6 +310,10 @@ interface FinanzasContexto {
   /** Tasa numérica derivada (texto inválido ⇒ 0). */
   tasa: number;
   setTasaTexto: (texto: string) => void;
+  /** Origen/fecha de la tasa vigente (BCV, manual, error). */
+  tasaBcv: TasaBcvInfo;
+  /** Re-consulta la tasa BCV a pedido del usuario (pisa la tasa manual). */
+  refrescarTasaBcv: () => void;
   categorias: CategoriaFinanciera[];
   transacciones: TransaccionFinanciera[];
   movimientosGrupo: MovimientoGrupo[];
@@ -298,11 +338,33 @@ const Contexto = createContext<FinanzasContexto | null>(null);
 export function FinanzasProvider({ children }: { children: React.ReactNode }) {
   const [estado, dispatch] = useReducer(reducer, ESTADO_INICIAL);
 
+  // Trae la tasa BCV vía /api/tasa-bcv. Con forzar=false (carga inicial) el
+  // reducer la ignora si el usuario ya editó a mano; repetirla es inocuo
+  // (StrictMode), así que no hace falta guard de montaje.
+  const consultarTasaBcv = useCallback(async (forzar: boolean) => {
+    if (forzar) dispatch({ tipo: "tasaBcvCargando" });
+    try {
+      const res = await fetch("/api/tasa-bcv");
+      const json: unknown = await res.json();
+      const { tasa, fechaISO } = json as { tasa?: unknown; fechaISO?: unknown };
+      if (!res.ok || typeof tasa !== "number" || typeof fechaISO !== "string") throw new Error();
+      dispatch({ tipo: "tasaBcvOk", tasa, fechaISO, forzar });
+    } catch {
+      dispatch({ tipo: "tasaBcvError", forzar });
+    }
+  }, []);
+
+  useEffect(() => {
+    consultarTasaBcv(false);
+  }, [consultarTasaBcv]);
+
   const valor = useMemo<FinanzasContexto>(
     () => ({
       tasaTexto: estado.tasaTexto,
       tasa: tasaDe(estado),
       setTasaTexto: (texto) => dispatch({ tipo: "setTasa", texto }),
+      tasaBcv: estado.tasaBcv,
+      refrescarTasaBcv: () => consultarTasaBcv(true),
       categorias: estado.categorias,
       transacciones: estado.transacciones,
       movimientosGrupo: estado.movimientosGrupo,
@@ -327,7 +389,7 @@ export function FinanzasProvider({ children }: { children: React.ReactNode }) {
       registrarPagoCompra: (datos, empresaId) =>
         dispatch({ tipo: "registrarPagoCompra", datos, empresaId }),
     }),
-    [estado]
+    [estado, consultarTasaBcv]
   );
 
   return <Contexto.Provider value={valor}>{children}</Contexto.Provider>;
