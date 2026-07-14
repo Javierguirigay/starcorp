@@ -1,18 +1,20 @@
 "use client";
 
 /**
- * Alta y edición de movimientos manuales. La edición conserva la tasa
- * congelada del registro original (tasaBs); el alta usa la tasa global
- * vigente para el equivalente en Bs mostrado en vivo.
+ * Alta y edición de movimientos manuales. El monto se captura en la moneda
+ * nativa de la cuenta elegida. La edición conserva la tasa congelada del
+ * registro original (tasaBs); el alta usa la tasa global vigente para el
+ * equivalente mostrado en vivo.
  */
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import type { Empresa, TipoTransaccion, TransaccionFinanciera } from "@/lib/types";
 import { fmtISO, formatNumberVE, money, parseVES } from "@/lib/format";
-import { categoriasParaTipo } from "@/lib/negocio/finanzas";
+import { categoriasParaTipo, convertirMonto, SIMBOLO_MONEDA } from "@/lib/negocio/finanzas";
 import { round2 } from "@/lib/negocio/nomina";
 import { Modal } from "@/components/ui/Modal";
 import { useFinanzas } from "./FinanzasProvider";
+import { SelectorCuenta } from "./SelectorCuenta";
 
 const inputCls =
   "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100";
@@ -37,20 +39,33 @@ export function TransaccionModal({
   const finanzas = useFinanzas();
 
   const [tipo, setTipo] = useState<TipoTransaccion>(transaccion?.tipo ?? "salida");
+  const [cuentaId, setCuentaId] = useState<number | "">(
+    transaccion?.cuentaId ?? finanzas.cuentaPredeterminadaDe(empresa.key)?.id ?? ""
+  );
   const [categoriaId, setCategoriaId] = useState<number | "">(transaccion?.categoriaId ?? "");
   const [montoTexto, setMontoTexto] = useState(
-    transaccion ? formatNumberVE(transaccion.montoUSD) : ""
+    transaccion ? formatNumberVE(transaccion.monto) : ""
   );
   // El modal se monta desde un clic (nunca en SSR): hoy como default es seguro.
   const [fecha, setFecha] = useState(transaccion?.fecha ?? fmtISO(new Date()));
   const [descripcion, setDescripcion] = useState(transaccion?.descripcion ?? "");
+  const [observaciones, setObservaciones] = useState(transaccion?.observaciones ?? "");
   /** null = mini-form de alta rápida cerrado. */
   const [nuevaCatNombre, setNuevaCatNombre] = useState<string | null>(null);
 
   const opciones = categoriasParaTipo(finanzas.categoriasDe(empresa.key), empresa.key, tipo);
+  const cuenta =
+    cuentaId === "" ? undefined : finanzas.cuentasDe(empresa.key).find((c) => c.id === cuentaId);
   const monto = parseVES(montoTexto);
   // Alta: tasa global vigente. Edición: se conserva el snapshot histórico.
   const tasaAplicada = transaccion ? transaccion.tasaBs : finanzas.tasa;
+  // Equivalente en vivo en la "otra" moneda: cuentas VES muestran ≈ $; el resto ≈ Bs.
+  const equivalente =
+    cuenta && monto > 0 && tasaAplicada > 0
+      ? cuenta.moneda === "VES"
+        ? money(convertirMonto(monto, "VES", "USD", tasaAplicada))
+        : money(convertirMonto(monto, cuenta.moneda, "VES", tasaAplicada), "Bs")
+      : null;
 
   const cambiarTipo = (t: TipoTransaccion) => {
     setTipo(t);
@@ -78,8 +93,12 @@ export function TransaccionModal({
   };
 
   const guardar = () => {
+    if (!cuenta) {
+      onToast("Selecciona la cuenta del movimiento");
+      return;
+    }
     if (monto <= 0) {
-      onToast("Indica un monto en USD mayor que cero");
+      onToast(`Indica un monto en ${cuenta.moneda} mayor que cero`);
       return;
     }
     if (categoriaId === "" || !opciones.some((c) => c.id === categoriaId)) {
@@ -100,11 +119,13 @@ export function TransaccionModal({
     }
     const datos = {
       empresaId: empresa.key,
+      cuentaId: cuenta.id,
       tipo,
       categoriaId,
-      montoUSD: round2(monto),
+      monto: round2(monto),
       fecha,
       descripcion: descripcion.trim(),
+      observaciones: observaciones.trim() || undefined,
     };
     if (transaccion) {
       finanzas.editarTransaccion(transaccion.id, datos);
@@ -120,7 +141,7 @@ export function TransaccionModal({
     <Modal
       onClose={onClose}
       title={transaccion ? "Editar movimiento" : "Nueva transacción"}
-      subtitle={`Finanzas ${empresa.nombre.replace(", C.A.", "")} · montos siempre en USD`}
+      subtitle={`Finanzas ${empresa.nombre.replace(", C.A.", "")} · el monto va en la moneda de la cuenta`}
       maxWidth="max-w-lg"
       footer={
         <>
@@ -150,6 +171,11 @@ export function TransaccionModal({
               Salida
             </button>
           </div>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-600 text-navy-900">Cuenta</label>
+          <SelectorCuenta empresaId={empresa.key} value={cuentaId} onChange={setCuentaId} />
         </div>
 
         <div>
@@ -210,7 +236,9 @@ export function TransaccionModal({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-sm font-600 text-navy-900">Monto (USD)</label>
+            <label className="mb-1.5 block text-sm font-600 text-navy-900">
+              Monto {cuenta ? `(${SIMBOLO_MONEDA[cuenta.moneda]})` : ""}
+            </label>
             <input
               type="text"
               inputMode="decimal"
@@ -220,8 +248,8 @@ export function TransaccionModal({
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-right font-mono text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100"
             />
             <p className="mt-1 text-right font-mono text-[11px] text-slate-400">
-              {monto > 0 && tasaAplicada > 0
-                ? `≈ ${money(monto * tasaAplicada, "Bs")}`
+              {equivalente
+                ? `≈ ${equivalente}`
                 : `Tasa ${money(tasaAplicada, "Bs")} / USD`}
             </p>
           </div>
@@ -243,6 +271,18 @@ export function TransaccionModal({
             placeholder="Ej: diésel unidades de vacuum"
             value={descripcion}
             onChange={(e) => setDescripcion(e.target.value)}
+            className="w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100"
+          ></textarea>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-600 text-navy-900">
+            Observaciones <span className="font-400 text-slate-400">(opcional)</span>
+          </label>
+          <textarea
+            rows={2}
+            value={observaciones}
+            onChange={(e) => setObservaciones(e.target.value)}
             className="w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100"
           ></textarea>
         </div>

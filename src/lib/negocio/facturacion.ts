@@ -74,11 +74,15 @@ export function diasDePeriodo(desde: string, hasta: string): number {
 }
 
 /** Renglón sugerido desde un período de servicio: CAN = días, descripción =
-    concepto + rango de fechas (el usuario edita todo y fija el P. UNIT). */
-export function renglonDeReporte(p: PeriodoServicio): { can: number; descripcion: string } {
+    concepto + rango de fechas, P. UNIT = tarifa referencial del catálogo (0 si
+    fue texto libre). El usuario edita todo antes de guardar la pre-factura. */
+export function renglonDeReporte(
+  p: PeriodoServicio
+): { can: number; descripcion: string; pUnit: number } {
   return {
     can: p.dias,
     descripcion: `${p.concepto} DEL ${fechaDoc(p.desde)} AL ${fechaDoc(p.hasta)}`,
+    pUnit: p.tarifaRef ?? 0,
   };
 }
 

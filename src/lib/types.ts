@@ -24,23 +24,60 @@ export interface Empresa {
 
 export type CategoriaEquipo = "petrolero" | "oficina" | "herramienta" | "vehiculo";
 
+/** Estado derivado (nunca se guarda): "Mantenimiento" si tiene una orden
+    "En taller", "Asignado" si figura en una asignación activa, si no
+    "Disponible". Ver derivarEstadoEquipo() en negocio/inventario.ts. */
 export type EstadoEquipo = "Disponible" | "Asignado" | "Mantenimiento";
 
-export interface Equipo {
-  codigo: string;
-  categoria: CategoriaEquipo;
-  estado: EstadoEquipo;
-  ubicacion: string;
+/** Ficha técnica del equipo (identidad). Todos los campos opcionales; los
+    mecánicos (motor) aplican sobre todo a petroleros/vehículos y `garantia` a
+    oficina/herramienta. Los consumibles que usa viven en `Equipo.consumibles`. */
+export interface FichaEquipo {
+  marca?: string;
+  modelo?: string;
+  serial?: string;
+  motor?: string;
+  garantia?: string;
+  notas?: string;
 }
 
-/** Dataset propio de la vista de Equipos (tarjetas con detalle operativo). */
-export interface EquipoDetalle {
-  nombre: string;
-  estado: EstadoEquipo;
+/** Consumible/repuesto vinculado a un equipo: rol (Aceite, Filtro de aceite…)
+    + referencia al catálogo de consumibles (para ver stock). */
+export interface EquipoConsumible {
+  rol: string;
+  consumibleId: number;
+}
+
+export interface Equipo {
+  id: number;
+  codigo: string; // nombre/código del equipo
+  categoria: CategoriaEquipo;
   ubicacion: string;
-  asignacion: string; // 'cliente · S-00x' o '—'
-  mantenimiento: "Al día" | "En taller" | "Pendiente";
-  proximo: string; // 'dd/mm/yyyy' | 'En curso'
+  ficha?: FichaEquipo;
+  /** Consumibles/repuestos que usa este equipo (para verificar stock). */
+  consumibles?: EquipoConsumible[];
+}
+
+/* ---------------- Consumibles (repuestos con stock) ---------------- */
+
+export type TipoConsumible =
+  | "Aceite"
+  | "Filtro"
+  | "Correa"
+  | "Batería"
+  | "Refrigerante"
+  | "Neumático"
+  | "Otro";
+
+/** Ítem del catálogo de consumibles con control de existencias. */
+export interface Consumible {
+  id: number;
+  nombre: string;
+  tipo: TipoConsumible;
+  unidad: string; // "unidad", "litro", "juego"…
+  cantidad: number; // existencias actuales
+  stockMinimo: number; // umbral de aviso de bajo stock
+  ubicacion: string;
 }
 
 /* ---------------- Mantenimiento ---------------- */
@@ -48,10 +85,11 @@ export interface EquipoDetalle {
 export type EstadoMantenimiento = "En taller" | "Pendiente" | "Programado" | "Completado";
 
 export interface RegistroMantenimiento {
-  equipo: string;
+  id: number;
+  equipo: string; // nombre del equipo (elegido del inventario)
   tipo: "Correctivo" | "Preventivo";
-  programado: string; // dd/mm/yyyy
-  realizado: string; // dd/mm/yyyy | '—' | 'En curso'
+  programado: string; // ISO yyyy-mm-dd
+  realizado: string; // ISO yyyy-mm-dd | "" (aún no realizado)
   estado: EstadoMantenimiento;
   tecnico: string;
   observaciones: string;
@@ -86,14 +124,60 @@ export interface MovimientoDashboard {
 
 export type TipoTransaccion = "entrada" | "salida";
 
-export type OrigenTransaccion = "manual" | "nomina" | "transferencia" | "factura" | "compra";
+export type OrigenTransaccion =
+  | "manual"
+  | "nomina"
+  | "transferencia"
+  | "factura"
+  | "compra"
+  | "traspaso";
 
 /** 'ambas' cubre categorías válidas para entrada y salida (Transferencias del Grupo). */
 export type TipoCategoria = TipoTransaccion | "ambas";
 
 /** Marca de categoría de sistema: los movimientos automáticos la buscan por
     este campo (no por nombre) para sobrevivir a renombres. */
-export type CategoriaSistema = "nomina" | "transferencias" | "facturas";
+export type CategoriaSistema = "nomina" | "transferencias" | "facturas" | "traspasos";
+
+/** Monedas soportadas por las cuentas financieras (extensible). */
+export type Moneda = "VES" | "USD" | "USDT";
+
+/** Cuenta financiera de una empresa (banco, exchange, caja). El saldo se
+    deriva de las transacciones; nunca se almacena. */
+export interface CuentaFinanciera {
+  id: number;
+  empresaId: string; // Empresa.key
+  nombre: string; // "Mercantil", "Binance", "Cuenta Principal"
+  /** Inmutable una vez la cuenta tiene movimientos. */
+  moneda: Moneda;
+  /** Exactamente una por empresa (invariante del reducer): recibe los
+      movimientos automáticos si el usuario no elige otra. */
+  predeterminada: boolean;
+  /** Desactivada: fuera de los selectores; su saldo sigue contando. */
+  activa: boolean;
+}
+
+/** Traspaso entre cuentas de la MISMA empresa: transferencia (misma moneda)
+    o conversión (monedas distintas). No es ingreso ni egreso: genera 2 filas
+    espejo en el libro (origen 'traspaso', referenciaId = id). */
+export interface TraspasoInterno {
+  id: number;
+  empresaId: string;
+  cuentaOrigenId: number;
+  cuentaDestinoId: number;
+  /** Moneda de cada cuenta congelada al registrar. */
+  monedaOrigen: Moneda;
+  /** Monto nativo que sale de la cuenta origen (ej. 50.000 VES). */
+  montoOrigen: number;
+  monedaDestino: Moneda;
+  /** Monto nativo que entra a la destino; editable si las monedas difieren. */
+  montoDestino: number;
+  /** Tasa Bs/USD vigente al registrar (equivalentes históricos). */
+  tasaBs: number;
+  fecha: string; // ISO yyyy-mm-dd
+  descripcion: string;
+  observaciones?: string;
+}
 
 export interface CategoriaFinanciera {
   id: number;
@@ -108,17 +192,23 @@ export interface CategoriaFinanciera {
 export interface TransaccionFinanciera {
   id: number;
   empresaId: string; // Empresa.key
+  /** Cuenta afectada: cada fila del libro toca exactamente una cuenta. */
+  cuentaId: number;
   tipo: TipoTransaccion;
   categoriaId: number;
-  /** SIEMPRE en USD; Bs = montoUSD × tasaBs. */
-  montoUSD: number;
-  /** Tasa Bs/USD congelada al registrar (histórico fiel). */
+  /** Moneda de la cuenta congelada al registrar (invariante: = cuenta.moneda). */
+  moneda: Moneda;
+  /** Monto NATIVO en `moneda`; el saldo por cuenta es la suma exacta de estos. */
+  monto: number;
+  /** Tasa Bs/USD congelada al registrar (equivalentes históricos). */
   tasaBs: number;
   fecha: string; // ISO yyyy-mm-dd; se muestra dd-mm-yyyy
   descripcion: string;
+  observaciones?: string;
   origen: OrigenTransaccion;
   /** PagoHistorial.id ('nomina'), MovimientoGrupo.id ('transferencia'),
-      Factura.id ('factura') o FacturaRecibida.id ('compra'). */
+      Factura.id ('factura'), FacturaRecibida.id ('compra') o
+      TraspasoInterno.id ('traspaso'). */
   referenciaId?: number;
 }
 
@@ -130,14 +220,21 @@ export interface MovimientoGrupo {
   /** Empresa.key cuando el extremo es una empresa del grupo. */
   origenKey?: string;
   destinoKey?: string;
+  /** Cuenta del extremo cuando es empresa del grupo (requerida en ese caso). */
+  cuentaOrigenId?: number;
+  cuentaDestinoId?: number;
   /** Texto libre para extremos externos ("IESV (cliente)", "Nómina"). */
   origenNombre: string;
   destinoNombre: string;
-  moneda: "USD" | "Bs";
-  monto: number;
+  monedaOrigen: Moneda;
+  montoOrigen: number;
+  /** Iguales al origen si no hay conversión de moneda. */
+  monedaDestino: Moneda;
+  montoDestino: number;
   /** Tasa Bs/USD vigente al registrar (para el espejo por empresa). */
   tasaBs: number;
   descripcion: string;
+  observaciones?: string;
   usuario: string;
 }
 
@@ -159,6 +256,9 @@ export interface PeriodoServicio {
   desde: string; // ISO yyyy-mm-dd
   hasta: string; // ISO
   dias: number;
+  /** USD referencial capturado al elegir el servicio del catálogo de tarifas
+      (se precarga como P. Unit. de la pre-factura; opcional/texto libre). */
+  tarifaRef?: number;
 }
 
 export type EstadoReporte = "pendiente" | "prefacturado";
@@ -189,6 +289,37 @@ export interface RenglonFactura {
   descripcion: string;
   /** Prefactura: USD. Factura: Bs (ya convertido por unitario a la tasa snapshot). */
   pUnit: number;
+}
+
+/* ---------------- Gestión de Tarifas (catálogo de servicios) ---------------- */
+
+/** Unidad/período de la tarifa referencial. */
+export type UnidadTarifa = "dia" | "hora" | "bloque8" | "servicio";
+export const UNIDADES_TARIFA: Record<UnidadTarifa, string> = {
+  dia: "Por día",
+  hora: "Por hora",
+  bloque8: "Bloque de 8 horas",
+  servicio: "Servicio / traslado (precio único)",
+};
+
+export type CategoriaTarifa = "luminaria" | "generador" | "traslado" | "otro";
+export const CATEGORIAS_TARIFA: Record<CategoriaTarifa, string> = {
+  luminaria: "Luminarias",
+  generador: "Generadores",
+  traslado: "Traslados",
+  otro: "Otros",
+};
+
+/** Servicio del catálogo con su tarifa REFERENCIAL (negociable por cliente; la
+    descripción del servicio sí es constante). Alimenta el selector del reporte. */
+export interface TarifaServicio {
+  id: number;
+  descripcion: string; // constante, ej. "SERVICIO DE ALQUILER DE LUMINARIA MARCA COLEMAN TIPO JIRAFA"
+  categoria: CategoriaTarifa;
+  unidad: UnidadTarifa;
+  tarifaRef: number; // USD referencial (bare number, convención del repo)
+  activo: boolean; // inactivo: no aparece en el selector del reporte, conserva historial
+  notas?: string;
 }
 
 export type EstadoPreFactura = "borrador" | "emitida" | "facturada";
@@ -304,6 +435,39 @@ export interface Retencion {
   totalBaseBs: number;
   totalImpuestoBs: number;
   totalRetenidoBs: number;
+}
+
+/* ---------------- Control administrativo (cuentas por pagar) ---------------- */
+
+/** Documento por pagar: factura de proveedor o nota de entrega (aún no factura). */
+export type TipoDocPorPagar = "factura" | "nota_entrega";
+
+export type EstadoPorPagar = "pendiente" | "pagada";
+
+/**
+ * Cuenta por pagar: documento administrativo pendiente de pago (no fiscal).
+ * No entra al Libro de Compras ni genera crédito/retención mientras esté
+ * pendiente; al pagarse se convierte en una FacturaRecibida (ya pagada) y es
+ * entonces cuando se capturan los datos fiscales.
+ */
+export interface CuentaPorPagar {
+  id: number;
+  tipo: TipoDocPorPagar;
+  proveedorId: number;
+  /** N° de la factura o de la nota de entrega. */
+  numeroDocumento: string;
+  fecha: string; // ISO (fecha del documento)
+  /** Fecha pactada de pago (ISO). Sin ella la cuenta no vence. */
+  fechaVencimiento?: string;
+  /** Monto total del documento en Bs (referencial administrativo). */
+  totalBs: number;
+  descripcion?: string;
+  estado: EstadoPorPagar;
+  /** Object URL del PDF subido (vive solo la sesión, fase mock). */
+  pdfUrl?: string;
+  pdfNombre?: string;
+  /** FacturaRecibida creada al pagarse (si ya se pagó/convirtió). */
+  facturaRecibidaId?: number;
 }
 
 /* ---------------- Gestión de órdenes ---------------- */
@@ -464,10 +628,10 @@ export interface PagoHistorial {
 export interface Asignacion {
   id: string; // S-00x
   cliente: string;
-  equipos: string;
-  desde: string; // dd/mm/yyyy
-  hasta: string; // dd/mm/yyyy
-  dias: number;
+  equipos: string[]; // códigos de equipo del inventario
+  desde: string; // ISO yyyy-mm-dd
+  hasta: string; // ISO yyyy-mm-dd; "" mientras la asignación sigue en curso (sin fecha de fin)
+  dias: number; // 0 mientras no tenga fecha "hasta" (en curso)
   estado: "Activo" | "Finalizado";
   observaciones: string;
 }

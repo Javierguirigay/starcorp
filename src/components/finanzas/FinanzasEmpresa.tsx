@@ -8,24 +8,33 @@
  */
 import { useEffect, useState } from "react";
 import {
+  ArrowLeftRight,
   FileDown,
   FolderCog,
+  Landmark,
   Pencil,
   Plus,
   Scale,
+  Star,
   Trash2,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
-import type { Empresa, TipoTransaccion, TransaccionFinanciera } from "@/lib/types";
+import type { Empresa, Moneda, TipoTransaccion, TransaccionFinanciera } from "@/lib/types";
 import { fmtISO, formatFechaVE, money } from "@/lib/format";
+import { round2 } from "@/lib/negocio/nomina";
 import {
   calcularTotales,
+  consolidadoUSD,
   filtrarPorTipo,
   filtrarTransacciones,
   montoBs,
+  montoUSDde,
   ordenarPorFechaDesc,
   resumenFiltros,
+  saldosPorCuenta,
+  saldosPorMoneda,
+  SIMBOLO_MONEDA,
   SIN_FILTROS,
   subtotales,
   type FiltrosTransacciones,
@@ -34,9 +43,11 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { Modal } from "@/components/ui/Modal";
 import { Toast } from "@/components/ui/Toast";
 import { useFinanzas } from "./FinanzasProvider";
-import { BadgeOrigen, BadgeTipoTransaccion } from "./badges";
+import { BadgeMoneda, BadgeOrigen, BadgeTipoTransaccion } from "./badges";
 import { TransaccionModal } from "./TransaccionModal";
 import { CategoriasModal } from "./CategoriasModal";
+import { CuentasModal } from "./CuentasModal";
+import { TraspasoModal } from "./TraspasoModal";
 
 const ORIGEN_LABEL: Record<TransaccionFinanciera["origen"], string> = {
   manual: "Manual",
@@ -44,11 +55,14 @@ const ORIGEN_LABEL: Record<TransaccionFinanciera["origen"], string> = {
   transferencia: "Transferencia",
   factura: "Factura",
   compra: "Compra",
+  traspaso: "Traspaso",
 };
 
 type ModalAbierto =
   | { tipo: "transaccion"; id: number | null }
   | { tipo: "categorias" }
+  | { tipo: "cuentas" }
+  | { tipo: "traspaso"; id: number | null }
   | null;
 
 const selectCls =
@@ -58,6 +72,7 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
   const finanzas = useFinanzas();
   const transacciones = finanzas.transaccionesDe(empresa.key);
   const categorias = finanzas.categoriasDe(empresa.key);
+  const cuentas = finanzas.cuentasDe(empresa.key);
   const etiqueta = empresa.nombre.replace(", C.A.", "");
   // rif vacío (p. ej. una persona natural): se muestra solo el nombre.
   const empresaLinea = empresa.rif ? `${empresa.nombre} — RIF ${empresa.rif}` : empresa.nombre;
@@ -83,19 +98,47 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
   }, [preview]);
 
   // KPIs de toda la empresa; los filtros aplican a la tabla y a los PDF.
+  // Balance = consolidado de saldos por cuenta a tasa vigente (no entradas − salidas).
   const totales = calcularTotales(transacciones);
+  const saldos = saldosPorCuenta(cuentas, transacciones);
+  const balance = consolidadoUSD(saldos, finanzas.tasa);
+  const porMoneda = saldosPorMoneda(saldos);
+  const desglosePorMoneda = (Object.entries(porMoneda) as [Moneda, number][])
+    .map(([m, s]) => money(s, SIMBOLO_MONEDA[m]))
+    .join(" · ");
   const visibles = ordenarPorFechaDesc(filtrarTransacciones(transacciones, filtros));
-  const totalesFiltro = calcularTotales(visibles);
+  // Neto de lo filtrado en equivalentes con snapshot (solo informativo).
+  const subEntradasFiltro = subtotales(filtrarPorTipo(visibles, "entrada"));
+  const subSalidasFiltro = subtotales(filtrarPorTipo(visibles, "salida"));
   const subFiltro = subtotales(visibles);
 
   const nombreCat = (id: number) => categorias.find((c) => c.id === id)?.nombre ?? "—";
+  const nombreCuenta = (id: number) => cuentas.find((c) => c.id === id)?.nombre ?? "—";
   const setFiltro = <K extends keyof FiltrosTransacciones>(k: K, v: FiltrosTransacciones[K]) =>
     setFiltros((f) => ({ ...f, [k]: v }));
   const hayFiltros =
-    filtros.tipo !== "todas" || filtros.categoriaId !== null || !!filtros.desde || !!filtros.hasta;
+    filtros.tipo !== "todas" ||
+    filtros.categoriaId !== null ||
+    filtros.cuentaId !== null ||
+    !!filtros.desde ||
+    !!filtros.hasta;
 
   const eliminar = (t: TransaccionFinanciera) => {
-    if (!confirm(`¿Eliminar el movimiento "${t.descripcion}" de ${money(t.montoUSD)}?`)) return;
+    const monto = money(t.monto, SIMBOLO_MONEDA[t.moneda]);
+    if (t.origen === "traspaso") {
+      // Las dos piernas del traspaso se eliminan juntas (padre + espejos).
+      if (t.referenciaId === undefined) return;
+      if (
+        !confirm(
+          `Este movimiento es parte de un traspaso entre cuentas. Se eliminarán sus dos piernas (salida y entrada). ¿Continuar?`
+        )
+      )
+        return;
+      finanzas.eliminarTraspaso(t.referenciaId);
+      setToast("Traspaso eliminado");
+      return;
+    }
+    if (!confirm(`¿Eliminar el movimiento "${t.descripcion}" de ${monto}?`)) return;
     finanzas.eliminarTransaccion(t.id);
     setToast("Movimiento eliminado");
   };
@@ -124,14 +167,16 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
           titulo={`Reporte Financiero — Finanzas ${etiqueta}`}
           subtitulo={`${esEntrada ? "Ingresos" : "Egresos"} · Generado el ${formatFechaVE(
             hoy
-          )} · ${resumenFiltros(filtros, categorias)}`}
+          )} · ${resumenFiltros(filtros, categorias, cuentas)}`}
           generado={formatFechaVE(hoy)}
           filas={lista.map((t) => ({
             fecha: formatFechaVE(t.fecha),
+            cuenta: nombreCuenta(t.cuentaId),
             categoria: nombreCat(t.categoriaId),
             descripcion: t.descripcion,
             origen: ORIGEN_LABEL[t.origen],
-            montoUSD: t.montoUSD,
+            monto: money(t.monto, SIMBOLO_MONEDA[t.moneda]),
+            montoUSD: montoUSDde(t),
             montoBs: montoBs(t),
           }))}
           totalUSD={sub.usd}
@@ -154,6 +199,62 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
     }
   };
 
+  // Reporte combinado: todos los movimientos (ingresos + egresos) de lo filtrado,
+  // con columna Tipo y pie de Ingresos/Egresos/Neto (mismo neto que la tabla).
+  const exportarMovimientos = async () => {
+    if (generando) return;
+    if (!visibles.length) {
+      setToast("No hay movimientos que exportar con estos filtros");
+      return;
+    }
+    setGenerando(true);
+    try {
+      const [docs, { generarPdfBlob, slug }] = await Promise.all([
+        import("./pdf/documentos"),
+        import("@/components/pdf/descargar"),
+      ]);
+      const hoy = fmtISO(new Date());
+      const doc = (
+        <docs.ReporteMovimientosDoc
+          empresaLinea={empresaLinea}
+          titulo={`Reporte Financiero — Finanzas ${etiqueta}`}
+          subtitulo={`Todos los movimientos · Generado el ${formatFechaVE(
+            hoy
+          )} · ${resumenFiltros(filtros, categorias, cuentas)}`}
+          generado={formatFechaVE(hoy)}
+          filas={visibles.map((t) => ({
+            fecha: formatFechaVE(t.fecha),
+            tipo: t.tipo === "entrada" ? "Ingreso" : "Egreso",
+            cuenta: nombreCuenta(t.cuentaId),
+            categoria: nombreCat(t.categoriaId),
+            descripcion: t.descripcion,
+            origen: ORIGEN_LABEL[t.origen],
+            monto: money(t.monto, SIMBOLO_MONEDA[t.moneda]),
+            montoUSD: montoUSDde(t),
+            montoBs: montoBs(t),
+          }))}
+          ingresosUSD={subEntradasFiltro.usd}
+          ingresosBs={subEntradasFiltro.bs}
+          egresosUSD={subSalidasFiltro.usd}
+          egresosBs={subSalidasFiltro.bs}
+          netoUSD={round2(subEntradasFiltro.usd - subSalidasFiltro.usd)}
+          netoBs={round2(subEntradasFiltro.bs - subSalidasFiltro.bs)}
+        />
+      );
+      const nombre = `movimientos_${slug(empresa.key)}_${formatFechaVE(hoy)}.pdf`;
+      const blob = await generarPdfBlob(doc);
+      setPreview({
+        url: URL.createObjectURL(blob),
+        nombre,
+        titulo: `Movimientos — Finanzas ${etiqueta}`,
+      });
+    } catch {
+      setToast("No se pudo generar el PDF");
+    } finally {
+      setGenerando(false);
+    }
+  };
+
   const btnBordeCls =
     "inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-600 text-navy-700 hover:bg-slate-50 disabled:opacity-50";
 
@@ -166,8 +267,23 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
           <p className="text-xs text-slate-400">{empresaLinea}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => setModal({ tipo: "cuentas" })} className={btnBordeCls}>
+            <Landmark className="h-4 w-4" /> Cuentas
+          </button>
           <button onClick={() => setModal({ tipo: "categorias" })} className={btnBordeCls}>
             <FolderCog className="h-4 w-4" /> Categorías
+          </button>
+          <button
+            onClick={() => setModal({ tipo: "traspaso", id: null })}
+            disabled={cuentas.filter((c) => c.activa).length < 2}
+            title={
+              cuentas.filter((c) => c.activa).length < 2
+                ? "Necesitas al menos dos cuentas activas"
+                : undefined
+            }
+            className={btnBordeCls}
+          >
+            <ArrowLeftRight className="h-4 w-4" /> Movimiento entre cuentas
           </button>
           <button
             onClick={() => setModal({ tipo: "transaccion", id: null })}
@@ -178,24 +294,55 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
         </div>
       </div>
 
-      {/* KPIs */}
+      {/* Cuentas: saldo real disponible por cuenta, en su moneda nativa */}
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {saldos.map(({ cuenta, saldo }) => (
+          <div
+            key={cuenta.id}
+            className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-card ${
+              cuenta.activa ? "" : "opacity-60"
+            }`}
+          >
+            <div className="mb-1 flex items-center gap-1.5">
+              <p className="truncate text-xs font-600 uppercase tracking-wide text-slate-400">
+                {cuenta.nombre}
+              </p>
+              {cuenta.predeterminada && (
+                <Star
+                  className="h-3.5 w-3.5 shrink-0 fill-gold-500 text-gold-500"
+                  aria-label="Cuenta predeterminada"
+                />
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-mono text-lg font-700 text-navy-950">
+                {money(saldo, SIMBOLO_MONEDA[cuenta.moneda])}
+              </p>
+              <BadgeMoneda moneda={cuenta.moneda} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* KPIs: ingresos/egresos operativos (sin traspasos ni transferencias)
+          y balance = suma de los saldos de las cuentas a tasa vigente */}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KpiCard
-          label="Total entradas"
+          label="Total ingresos"
           valor={money(totales.entradasUSD)}
           sub={money(totales.entradasBs, "Bs")}
           icon={TrendingUp}
         />
         <KpiCard
-          label="Total salidas"
+          label="Total egresos"
           valor={money(totales.salidasUSD)}
           sub={money(totales.salidasBs, "Bs")}
           icon={TrendingDown}
         />
         <KpiCard
-          label="Balance"
-          valor={money(totales.balanceUSD)}
-          sub={money(totales.balanceBs, "Bs")}
+          label="Balance (consolidado)"
+          valor={money(balance)}
+          sub={desglosePorMoneda || "Sin cuentas"}
           icon={Scale}
           tone="gold"
         />
@@ -219,6 +366,9 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
             <button onClick={() => exportar("salida")} disabled={generando} className={btnBordeCls}>
               <FileDown className="h-4 w-4" /> Exportar Egresos a PDF
             </button>
+            <button onClick={exportarMovimientos} disabled={generando} className={btnBordeCls}>
+              <FileDown className="h-4 w-4" /> Exportar Movimientos a PDF
+            </button>
           </div>
         </div>
 
@@ -236,6 +386,25 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
               <option value="todas">Todas</option>
               <option value="entrada">Entradas</option>
               <option value="salida">Salidas</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-600 uppercase tracking-wide text-slate-400">
+              Cuenta
+            </label>
+            <select
+              value={filtros.cuentaId ?? ""}
+              onChange={(e) =>
+                setFiltro("cuentaId", e.target.value === "" ? null : Number(e.target.value))
+              }
+              className={selectCls}
+            >
+              <option value="">Todas</option>
+              {cuentas.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre} ({c.moneda})
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -295,18 +464,19 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
               <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wide text-slate-400">
                 <th className="px-5 py-3 font-600">Fecha</th>
                 <th className="px-5 py-3 font-600">Tipo</th>
+                <th className="px-5 py-3 font-600">Cuenta</th>
                 <th className="px-5 py-3 font-600">Categoría</th>
                 <th className="px-5 py-3 font-600">Descripción</th>
                 <th className="px-5 py-3 font-600">Origen</th>
-                <th className="px-5 py-3 text-right font-600">Monto USD</th>
-                <th className="px-5 py-3 text-right font-600">Monto Bs</th>
+                <th className="px-5 py-3 text-right font-600">Monto</th>
+                <th className="px-5 py-3 text-right font-600">Equiv. USD</th>
                 <th className="px-5 py-3 text-right font-600">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {visibles.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">
+                  <td colSpan={9} className="px-5 py-10 text-center text-sm text-slate-400">
                     No hay movimientos para estos filtros.
                   </td>
                 </tr>
@@ -319,8 +489,13 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
                     <td className="px-5 py-3">
                       <BadgeTipoTransaccion tipo={t.tipo} />
                     </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-navy-900">
+                      {nombreCuenta(t.cuentaId)}
+                    </td>
                     <td className="px-5 py-3 text-navy-900">{nombreCat(t.categoriaId)}</td>
-                    <td className="px-5 py-3 text-slate-500">{t.descripcion}</td>
+                    <td className="px-5 py-3 text-slate-500" title={t.observaciones}>
+                      {t.descripcion}
+                    </td>
                     <td className="px-5 py-3">
                       <BadgeOrigen origen={t.origen} />
                     </td>
@@ -330,24 +505,30 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
                       }`}
                     >
                       {t.tipo === "salida" ? "− " : ""}
-                      {money(t.montoUSD)}
+                      {money(t.monto, SIMBOLO_MONEDA[t.moneda])}
                     </td>
                     <td className="whitespace-nowrap px-5 py-3 text-right font-mono text-xs text-slate-400">
-                      {/* Bs con la tasa congelada al registrar, no la vigente. */}
-                      {money(montoBs(t), "Bs")}
+                      {/* Equivalente con la tasa congelada al registrar, no la vigente. */}
+                      {money(montoUSDde(t))}
                     </td>
                     <td className="px-5 py-3">
-                      {t.origen === "manual" ? (
+                      {t.origen === "manual" || t.origen === "traspaso" ? (
                         <div className="flex items-center justify-end gap-1">
                           <button
-                            title="Editar"
-                            onClick={() => setModal({ tipo: "transaccion", id: t.id })}
+                            title={t.origen === "traspaso" ? "Editar traspaso" : "Editar"}
+                            onClick={() =>
+                              setModal(
+                                t.origen === "traspaso"
+                                  ? { tipo: "traspaso", id: t.referenciaId ?? null }
+                                  : { tipo: "transaccion", id: t.id }
+                              )
+                            }
                             className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-navy-700"
                           >
                             <Pencil className="h-4 w-4" />
                           </button>
                           <button
-                            title="Eliminar"
+                            title={t.origen === "traspaso" ? "Eliminar traspaso" : "Eliminar"}
                             onClick={() => eliminar(t)}
                             className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600"
                           >
@@ -370,10 +551,10 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
             {visibles.length > 0 && (
               <tfoot>
                 <tr className="border-t border-slate-200 bg-slate-50/60 font-600 text-navy-900">
-                  <td className="px-5 py-3" colSpan={5}>
+                  <td className="px-5 py-3" colSpan={7}>
                     {filtros.tipo === "todas"
-                      ? `Balance de lo filtrado (${visibles.length} movimientos)`
-                      : `Subtotal ${filtros.tipo === "entrada" ? "entradas" : "salidas"} (${
+                      ? `Neto de lo filtrado en equiv. USD (${visibles.length} movimientos)`
+                      : `Subtotal ${filtros.tipo === "entrada" ? "entradas" : "salidas"} en equiv. USD (${
                           visibles.length
                         } movimientos)`}
                   </td>
@@ -383,17 +564,8 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
                     }`}
                   >
                     {filtros.tipo === "todas"
-                      ? money(totalesFiltro.balanceUSD)
+                      ? money(round2(subEntradasFiltro.usd - subSalidasFiltro.usd))
                       : (filtros.tipo === "salida" ? "− " : "") + money(subFiltro.usd)}
-                  </td>
-                  <td
-                    className={`px-5 py-3 text-right font-mono text-xs ${
-                      filtros.tipo === "salida" ? "text-rose-600" : "text-slate-500"
-                    }`}
-                  >
-                    {filtros.tipo === "todas"
-                      ? money(totalesFiltro.balanceBs, "Bs")
-                      : (filtros.tipo === "salida" ? "− " : "") + money(subFiltro.bs, "Bs")}
                   </td>
                   <td className="px-5 py-3" />
                 </tr>
@@ -417,6 +589,22 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
       )}
       {modal?.tipo === "categorias" && (
         <CategoriasModal empresa={empresa} onToast={setToast} onClose={() => setModal(null)} />
+      )}
+      {modal?.tipo === "cuentas" && (
+        <CuentasModal empresa={empresa} onToast={setToast} onClose={() => setModal(null)} />
+      )}
+      {modal?.tipo === "traspaso" && (
+        <TraspasoModal
+          key={modal.id ?? "nuevo"}
+          empresa={empresa}
+          traspaso={
+            modal.id !== null
+              ? finanzas.traspasos.find((tr) => tr.id === modal.id) ?? null
+              : null
+          }
+          onToast={setToast}
+          onClose={() => setModal(null)}
+        />
       )}
 
       {/* Vista previa del PDF */}

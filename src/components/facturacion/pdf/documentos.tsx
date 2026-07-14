@@ -9,6 +9,7 @@
 import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import type { CalibracionPlantilla, Cliente, Factura, RenglonFactura } from "@/lib/types";
 import { logoPdfDe } from "@/lib/branding";
+import { LOTER_DIRECCION, LOTER_RIF } from "@/lib/config";
 import { formatNumberVE } from "@/lib/format";
 import {
   fechaDoc,
@@ -75,13 +76,17 @@ const s = StyleSheet.create({
   cTotal: { width: 82, textAlign: "right", paddingVertical: 4, paddingHorizontal: 6 },
   sep: { position: "absolute", top: 0, bottom: 0, width: 1, backgroundColor: NEGRO },
   locacion: { position: "absolute", bottom: 6, left: 40, fontSize: 8 },
-  pieFila: { flexDirection: "row", borderTopWidth: 1, borderTopColor: NEGRO },
+  /* Formato real: la línea horizontal de cada fila de totales abarca SOLO las
+     columnas P. UNIT. y TOTAL; CAN y DESCRIPCIÓN quedan abiertas hasta abajo. */
+  pieFila: { flexDirection: "row" },
   pieEtq: {
     width: 92,
     fontFamily: "Helvetica-Bold",
     fontSize: 8,
     paddingVertical: 3,
     paddingHorizontal: 6,
+    borderTopWidth: 1,
+    borderTopColor: NEGRO,
   },
   pieVal: {
     width: 82,
@@ -90,6 +95,8 @@ const s = StyleSheet.create({
     textAlign: "right",
     paddingVertical: 3,
     paddingHorizontal: 6,
+    borderTopWidth: 1,
+    borderTopColor: NEGRO,
   },
 });
 
@@ -216,39 +223,43 @@ export function DocumentoVenta({
             </Text>
             <Text style={[s.tCabCelda, { width: 82 }]}>TOTAL</Text>
           </View>
-          {/* Cuerpo de alto fijo: las celdas "vacías" salen solas y los
-              separadores verticales corren de arriba a abajo. */}
-          <View style={s.cuerpo}>
+          {/* Cuerpo de alto fijo + filas de totales bajo un mismo contenedor:
+              los separadores verticales corren continuos desde el encabezado
+              hasta el borde inferior de la tabla, incluida la zona de totales
+              (formato real de prefactura_066/068). */}
+          <View style={{ position: "relative" }}>
             <View style={[s.sep, { left: sepIzq }]} />
             <View style={[s.sep, { right: sepMonto }]} />
             <View style={[s.sep, { right: sepTotal }]} />
-            {renglones.map((r) => (
-              <View key={r.id} style={s.fila}>
-                <Text style={s.cCan}>{r.can}</Text>
-                <Text style={s.cDesc}>{r.descripcion}</Text>
-                <Text style={s.cMonto}>{dinero(r.pUnit, sym)}</Text>
-                <Text style={s.cTotal}>{dinero(totalRenglon(r), sym)}</Text>
-              </View>
-            ))}
-            {locacion ? <Text style={s.locacion}>LOCACION: {locacion}</Text> : null}
-          </View>
-          <View style={s.pieFila}>
-            <Text style={{ width: 34 }} />
-            <Text style={{ flex: 1 }} />
-            <Text style={s.pieEtq}>SUB - TOTAL{bs}</Text>
-            <Text style={s.pieVal}>{dinero(t.subtotal, sym)}</Text>
-          </View>
-          <View style={s.pieFila}>
-            <Text style={{ width: 34 }} />
-            <Text style={{ flex: 1 }} />
-            <Text style={s.pieEtq}>IVA 16%{bs}</Text>
-            <Text style={s.pieVal}>{dinero(t.iva, sym)}</Text>
-          </View>
-          <View style={s.pieFila}>
-            <Text style={{ width: 34 }} />
-            <Text style={{ flex: 1 }} />
-            <Text style={s.pieEtq}>TOTAL A PAGAR{bs}</Text>
-            <Text style={s.pieVal}>{dinero(t.total, sym)}</Text>
+            <View style={s.cuerpo}>
+              {renglones.map((r) => (
+                <View key={r.id} style={s.fila}>
+                  <Text style={s.cCan}>{r.can}</Text>
+                  <Text style={s.cDesc}>{r.descripcion}</Text>
+                  <Text style={s.cMonto}>{dinero(r.pUnit, sym)}</Text>
+                  <Text style={s.cTotal}>{dinero(totalRenglon(r), sym)}</Text>
+                </View>
+              ))}
+              {locacion ? <Text style={s.locacion}>LOCACION: {locacion}</Text> : null}
+            </View>
+            <View style={s.pieFila}>
+              <Text style={{ width: 34 }} />
+              <Text style={{ flex: 1 }} />
+              <Text style={s.pieEtq}>SUB - TOTAL{bs}</Text>
+              <Text style={s.pieVal}>{dinero(t.subtotal, sym)}</Text>
+            </View>
+            <View style={s.pieFila}>
+              <Text style={{ width: 34 }} />
+              <Text style={{ flex: 1 }} />
+              <Text style={s.pieEtq}>IVA 16%{bs}</Text>
+              <Text style={s.pieVal}>{dinero(t.iva, sym)}</Text>
+            </View>
+            <View style={s.pieFila}>
+              <Text style={{ width: 34 }} />
+              <Text style={{ flex: 1 }} />
+              <Text style={s.pieEtq}>TOTAL A PAGAR{bs}</Text>
+              <Text style={s.pieVal}>{dinero(t.total, sym)}</Text>
+            </View>
           </View>
         </View>
       </Page>
@@ -359,16 +370,33 @@ export function PlantillaImpresionDoc({
 /* ============ Libro de ventas (débitos fiscales) ============ */
 
 const lv = StyleSheet.create({
-  page: { padding: 32, fontFamily: "Helvetica", fontSize: 7, color: NEGRO },
-  titulo: { fontFamily: "Helvetica-Bold", fontSize: 11, textAlign: "center" },
-  subtitulo: { fontSize: 8, textAlign: "center", marginTop: 2 },
-  tabla: { borderWidth: 1, borderColor: NEGRO, marginTop: 10 },
+  page: { padding: 24, fontFamily: "Helvetica", fontSize: 6, color: NEGRO },
+  encabezado: { fontSize: 7, marginBottom: 1 },
+  encabezadoBold: { fontFamily: "Helvetica-Bold", fontSize: 7.5, marginBottom: 1 },
+  tabla: { borderWidth: 1, borderColor: NEGRO, marginTop: 8 },
   fila: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: NEGRO },
   filaUlt: { flexDirection: "row" },
+  banda: { flexDirection: "row", backgroundColor: "#EEF2F7" },
   cab: { backgroundColor: "#EEF2F7", fontFamily: "Helvetica-Bold" },
-  celda: { padding: 3 },
-  num: { padding: 3, textAlign: "right" },
-  totales: { fontFamily: "Helvetica-Bold", backgroundColor: "#F7F9FC" },
+  celda: { padding: 2, borderRightWidth: 0.5, borderRightColor: NEGRO },
+  celdaUlt: { padding: 2 },
+  num: { textAlign: "right" },
+  centro: { textAlign: "center" },
+  grupo: {
+    borderRightWidth: 0.5,
+    borderRightColor: NEGRO,
+    borderBottomWidth: 0.5,
+    borderBottomColor: NEGRO,
+    padding: 2,
+    textAlign: "center",
+    fontFamily: "Helvetica-Bold",
+  },
+  resumen: { marginTop: 10, alignSelf: "flex-end", width: 430, borderWidth: 1, borderColor: NEGRO },
+  resFila: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: NEGRO },
+  resFilaUlt: { flexDirection: "row" },
+  resEtq: { flex: 1, padding: 2.5 },
+  resVal: { width: 78, padding: 2.5, textAlign: "right" },
+  bold: { fontFamily: "Helvetica-Bold" },
 });
 
 export function LibroVentasDoc({
@@ -380,65 +408,143 @@ export function LibroVentasDoc({
   filas: FilaLibroVentas[];
   totales: TotalesLibroVentas;
 }) {
-  const anchos = [30, 50, 60, 62, 170, 68, 78, 78, 34, 78];
+  // Formato fiscal SENIAT (docs/referencias/libro_de_ventas.pdf). 20 columnas;
+  // hoy solo se emiten ventas internas gravadas al 16%, el resto va en 0,00.
+  const w = [20, 38, 50, 70, 34, 36, 40, 32, 28, 32, 46, 40, 44, 20, 44, 40, 20, 40, 38, 34];
+  const suma = (desde: number, hasta: number) => w.slice(desde, hasta).reduce((a, b) => a + b, 0);
+  const idBloque = suma(0, 12); // columnas 1-12
+  const g1 = suma(12, 15); // Ventas Internas o Exportac. Gravadas
+  const g2 = suma(15, 18); // Ventas a No Contribuyentes
+  const colaBloque = suma(18, 20); // IVA retenido + percibido
+  const etqBloque = suma(0, 10); // ancho de la etiqueta en las filas de totales
+  const CERO = formatNumberVE(0);
   const cab = [
-    "N° Oper.",
-    "Fecha",
-    "N° Factura",
-    "N° Control",
-    "Nombre o Razón Social",
+    "Oper-\nNro.",
+    "Fecha\nFactura",
     "RIF",
-    "Ventas con IVA (Bs)",
-    "Base Imponible (Bs)",
-    "% Alíc.",
-    "Débito Fiscal (Bs)",
+    "Nombre o Razón Social",
+    "N° Planilla\nExport.\n(Forma D)",
+    "Número\nde Factura",
+    "N° de\nControl",
+    "N° Nota\nde Crédito",
+    "Tipos de\ntransacc.",
+    "N° Factura\nAfectada",
+    "Total Ventas\nIncluy. IVA",
+    "Ventas Internas\nno Gravadas",
+    "Base\nImponible",
+    "%\nAlíc.",
+    "Impuesto\nIVA",
+    "Base\nImponible",
+    "%\nAlíc.",
+    "Impuesto\nIVA",
+    "IVA Retenido\npor comprador",
+    "IVA\nPercibido",
+  ];
+  const totFilas = [
+    { etq: "TOTALES ANTES DE LOS AJUSTES", total: totales.totalConIvaBs, base: totales.baseImponibleBs, imp: totales.debitoFiscalBs },
+    { etq: "TOTALES DE LOS AJUSTES", total: 0, base: 0, imp: 0 },
+    { etq: "TOTAL DESPUES DE LOS AJUSTES", total: totales.totalConIvaBs, base: totales.baseImponibleBs, imp: totales.debitoFiscalBs },
+  ];
+  const resVentas = [
+    { etq: "VENTAS INTERNAS NO GRAVADAS", base: 0, deb: 0 },
+    { etq: "VENTAS DE EXPORTACION", base: 0, deb: 0 },
+    { etq: "VENTAS INTERNAS GRAVADAS SOLO POR ALIC. GENERAL", base: totales.baseImponibleBs, deb: totales.debitoFiscalBs },
+    { etq: "VENTAS INTERN. GRAVADAS POR ALIC. GENERAL + ADIC.", base: 0, deb: 0 },
+    { etq: "VENTAS INTERNAS GRAVADAS POR ALICUOTA REDUCIDA", base: 0, deb: 0 },
+    { etq: "TOTAL ANTES DE AJUSTES:", base: totales.baseImponibleBs, deb: totales.debitoFiscalBs, bold: true },
+    { etq: "AJUSTES", base: 0, deb: 0 },
   ];
   return (
     <Document>
       <Page size="LETTER" orientation="landscape" style={lv.page}>
-        <Text style={lv.titulo}>LIBRO DE VENTAS</Text>
-        <Text style={lv.subtitulo}>
-          LOTER, C.A — RIF J-31717295-7 — PERÍODO: {periodo}
-        </Text>
+        <Text style={lv.encabezadoBold}>NOMBRE DE LA EMPRESA: LOTER, C.A</Text>
+        <Text style={lv.encabezadoBold}>LIBRO DE VENTAS</Text>
+        <Text style={lv.encabezado}>DOMICILIO FISCAL: {LOTER_DIRECCION.toUpperCase()}</Text>
+        <Text style={lv.encabezado}>RIF: {LOTER_RIF}</Text>
+        <Text style={lv.encabezadoBold}>PERÍODO: {periodo}</Text>
+
         <View style={lv.tabla}>
+          {/* Banda de grupos (2° nivel de cabecera) */}
+          <View style={lv.banda}>
+            <Text style={{ width: idBloque }} />
+            <Text style={[lv.grupo, { width: g1 }]}>Ventas Internas o Exportac. Gravadas</Text>
+            <Text style={[lv.grupo, { width: g2 }]}>Ventas a No Contribuyentes</Text>
+            <Text style={{ width: colaBloque }} />
+          </View>
+          {/* Cabecera de columnas */}
           <View style={[lv.fila, lv.cab]}>
             {cab.map((h, i) => (
-              <Text key={h} style={[i >= 6 && i !== 8 ? lv.num : lv.celda, { width: anchos[i] }, i === 4 ? { flex: 1 } : {}]}>
+              <Text
+                key={i}
+                style={[i === cab.length - 1 ? lv.celdaUlt : lv.celda, lv.centro, { width: w[i] }]}
+              >
                 {h}
               </Text>
             ))}
           </View>
-          {filas.map((f) => (
-            <View key={f.numOp} style={lv.fila}>
-              <Text style={[lv.celda, { width: anchos[0] }]}>{f.numOp}</Text>
-              <Text style={[lv.celda, { width: anchos[1] }]}>{fechaDoc(f.fecha)}</Text>
-              <Text style={[lv.celda, { width: anchos[2] }]}>{f.numeroFactura}</Text>
-              <Text style={[lv.celda, { width: anchos[3] }]}>{f.numeroControl}</Text>
-              <Text style={[lv.celda, { width: anchos[4], flex: 1 }]}>{f.cliente}</Text>
-              <Text style={[lv.celda, { width: anchos[5] }]}>{f.rif}</Text>
-              <Text style={[lv.num, { width: anchos[6] }]}>{formatNumberVE(f.totalConIvaBs)}</Text>
-              <Text style={[lv.num, { width: anchos[7] }]}>{formatNumberVE(f.baseImponibleBs)}</Text>
-              <Text style={[lv.celda, { width: anchos[8], textAlign: "center" }]}>16%</Text>
-              <Text style={[lv.num, { width: anchos[9] }]}>{formatNumberVE(f.debitoFiscalBs)}</Text>
+          {/* Filas de operaciones */}
+          {filas.map((f, idx) => (
+            <View key={f.numOp} style={idx === filas.length - 1 ? lv.filaUlt : lv.fila}>
+              <Text style={[lv.celda, lv.centro, { width: w[0] }]}>{f.numOp}</Text>
+              <Text style={[lv.celda, { width: w[1] }]}>{fechaDoc(f.fecha)}</Text>
+              <Text style={[lv.celda, { width: w[2] }]}>{f.rif}</Text>
+              <Text style={[lv.celda, { width: w[3] }]}>{f.cliente}</Text>
+              <Text style={[lv.celda, { width: w[4] }]} />
+              <Text style={[lv.celda, { width: w[5] }]}>{f.numeroFactura}</Text>
+              <Text style={[lv.celda, { width: w[6] }]}>{f.numeroControl}</Text>
+              <Text style={[lv.celda, { width: w[7] }]} />
+              <Text style={[lv.celda, lv.centro, { width: w[8] }]}>01-Reg</Text>
+              <Text style={[lv.celda, { width: w[9] }]} />
+              <Text style={[lv.celda, lv.num, { width: w[10] }]}>{formatNumberVE(f.totalConIvaBs)}</Text>
+              <Text style={[lv.celda, lv.num, { width: w[11] }]} />
+              <Text style={[lv.celda, lv.num, { width: w[12] }]}>{formatNumberVE(f.baseImponibleBs)}</Text>
+              <Text style={[lv.celda, lv.centro, { width: w[13] }]}>16%</Text>
+              <Text style={[lv.celda, lv.num, { width: w[14] }]}>{formatNumberVE(f.debitoFiscalBs)}</Text>
+              <Text style={[lv.celda, lv.num, { width: w[15] }]} />
+              <Text style={[lv.celda, lv.centro, { width: w[16] }]}>16%</Text>
+              <Text style={[lv.celda, lv.num, { width: w[17] }]}>{CERO}</Text>
+              <Text style={[lv.celda, lv.num, { width: w[18] }]}>{CERO}</Text>
+              <Text style={[lv.celdaUlt, lv.num, { width: w[19] }]}>{CERO}</Text>
             </View>
           ))}
-          <View style={[lv.filaUlt, lv.totales]}>
-            <Text style={[lv.celda, { width: anchos[0] + anchos[1] + anchos[2] + anchos[3] }]}>
-              TOTALES DEL PERÍODO ({filas.length} operaciones)
-            </Text>
-            <Text style={[lv.celda, { flex: 1 }]} />
-            <Text style={[lv.celda, { width: anchos[5] }]} />
-            <Text style={[lv.num, { width: anchos[6] }]}>{formatNumberVE(totales.totalConIvaBs)}</Text>
-            <Text style={[lv.num, { width: anchos[7] }]}>{formatNumberVE(totales.baseImponibleBs)}</Text>
-            <Text style={[lv.celda, { width: anchos[8] }]} />
-            <Text style={[lv.num, { width: anchos[9] }]}>{formatNumberVE(totales.debitoFiscalBs)}</Text>
+          {/* Filas de totales (antes / de los ajustes / después) */}
+          {totFilas.map((t) => (
+            <View key={t.etq} style={[lv.fila, lv.cab]}>
+              <Text style={[lv.celda, { width: etqBloque }]}>{t.etq}</Text>
+              <Text style={[lv.celda, lv.num, { width: w[10] }]}>{formatNumberVE(t.total)}</Text>
+              <Text style={[lv.celda, lv.num, { width: w[11] }]}>{CERO}</Text>
+              <Text style={[lv.celda, lv.num, { width: w[12] }]}>{formatNumberVE(t.base)}</Text>
+              <Text style={[lv.celda, { width: w[13] }]} />
+              <Text style={[lv.celda, lv.num, { width: w[14] }]}>{formatNumberVE(t.imp)}</Text>
+              <Text style={[lv.celda, lv.num, { width: w[15] }]} />
+              <Text style={[lv.celda, { width: w[16] }]} />
+              <Text style={[lv.celda, lv.num, { width: w[17] }]}>{CERO}</Text>
+              <Text style={[lv.celda, lv.num, { width: w[18] }]}>{CERO}</Text>
+              <Text style={[lv.celdaUlt, lv.num, { width: w[19] }]}>{CERO}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Cuadro RESUMEN de débitos fiscales (como el formato real) */}
+        <View style={lv.resumen}>
+          <View style={[lv.resFila, lv.cab]}>
+            <Text style={[lv.resEtq, lv.bold]}>RESUMEN:</Text>
+            <Text style={[lv.resVal, lv.bold]}>BASE IMPONIBLE</Text>
+            <Text style={[lv.resVal, lv.bold]}>DEBITO FISCAL</Text>
+          </View>
+          {resVentas.map((r) => (
+            <View key={r.etq} style={lv.resFila}>
+              <Text style={[lv.resEtq, ...(r.bold ? [lv.bold] : [])]}>{r.etq}</Text>
+              <Text style={[lv.resVal, ...(r.bold ? [lv.bold] : [])]}>{formatNumberVE(r.base)}</Text>
+              <Text style={[lv.resVal, ...(r.bold ? [lv.bold] : [])]}>{formatNumberVE(r.deb)}</Text>
+            </View>
+          ))}
+          <View style={lv.resFilaUlt}>
+            <Text style={[lv.resEtq, lv.bold]}>TOTAL DESPUES DE AJUSTES</Text>
+            <Text style={lv.resVal} />
+            <Text style={[lv.resVal, lv.bold]}>{formatNumberVE(totales.debitoFiscalBs)}</Text>
           </View>
         </View>
-        <Text style={{ marginTop: 8, fontSize: 8 }}>
-          Resumen del período — Total ventas con IVA: Bs {formatNumberVE(totales.totalConIvaBs)} ·
-          Base imponible: Bs {formatNumberVE(totales.baseImponibleBs)} · Débitos fiscales: Bs{" "}
-          {formatNumberVE(totales.debitoFiscalBs)}
-        </Text>
       </Page>
     </Document>
   );

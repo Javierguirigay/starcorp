@@ -1,4 +1,4 @@
-import type { OrigenTransaccion, TipoCategoria, TipoTransaccion } from "@/lib/types";
+import type { Moneda, OrigenTransaccion, TipoCategoria, TipoTransaccion } from "@/lib/types";
 
 export function BadgeTipoTransaccion({ tipo }: { tipo: TipoTransaccion }) {
   return tipo === "entrada" ? (
@@ -28,6 +28,7 @@ const MAPA_ORIGEN: Record<OrigenTransaccion, { etiqueta: string; cls: string }> 
   transferencia: { etiqueta: "Transferencia", cls: "bg-gold-500/15 text-gold-600" },
   factura: { etiqueta: "Factura", cls: "bg-emerald-50 text-emerald-700" },
   compra: { etiqueta: "Compra", cls: "bg-amber-50 text-amber-700" },
+  traspaso: { etiqueta: "Traspaso", cls: "bg-violet-50 text-violet-700" },
 };
 
 export function BadgeOrigen({ origen }: { origen: OrigenTransaccion }) {
@@ -35,6 +36,22 @@ export function BadgeOrigen({ origen }: { origen: OrigenTransaccion }) {
   return (
     <span className={`whitespace-nowrap rounded-full ${m.cls} px-2.5 py-1 text-xs font-600`}>
       {m.etiqueta}
+    </span>
+  );
+}
+
+const MAPA_MONEDA: Record<Moneda, string> = {
+  VES: "bg-amber-50 text-amber-700",
+  USD: "bg-emerald-50 text-emerald-700",
+  USDT: "bg-teal-50 text-teal-700",
+};
+
+export function BadgeMoneda({ moneda }: { moneda: Moneda }) {
+  return (
+    <span
+      className={`whitespace-nowrap rounded-full ${MAPA_MONEDA[moneda]} px-2 py-0.5 text-[11px] font-600`}
+    >
+      {moneda}
     </span>
   );
 }

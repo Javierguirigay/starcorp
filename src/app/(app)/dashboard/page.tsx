@@ -22,14 +22,14 @@ type Kpi = { label: string; valor: string; sub: string; icon: LucideIcon; tone: 
 
 const KPI_EMPLEADOS: Kpi = { label: "Empleados activos", valor: "24", sub: "18 quincenal · 6 semanal", icon: Users, tone: "navy" };
 const KPIS_OPERACIONES: Kpi[] = [
-  { label: "Equipos en locación", valor: "6 / 9", sub: "3 disponibles en patio", icon: Forklift, tone: "navy" },
+  { label: "Equipos en locación", valor: "3 / 8", sub: "4 disponibles en patio", icon: Forklift, tone: "navy" },
   { label: "Asignaciones activas", valor: "3", sub: "Pozos SBC-37", icon: ClipboardList, tone: "navy" },
 ];
 
 const ESTADO_EQUIPOS = [
-  { l: "Asignados", n: 4, pct: 44, c: "bg-navy-700" },
-  { l: "Disponibles", n: 4, pct: 44, c: "bg-emerald-500" },
-  { l: "Mantenimiento", n: 1, pct: 12, c: "bg-gold-500" },
+  { l: "Asignados", n: 3, pct: 37, c: "bg-navy-700" },
+  { l: "Disponibles", n: 4, pct: 50, c: "bg-emerald-500" },
+  { l: "Mantenimiento", n: 1, pct: 13, c: "bg-gold-500" },
 ];
 
 const BADGE_TIPO: Record<string, string> = {
@@ -77,7 +77,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <h2 className="font-display text-base font-700 text-navy-950">Estado de equipos</h2>
               <Link
-                href="/loter/administracion/equipos"
+                href="/loter/administracion/inventario"
                 className="text-sm font-600 text-navy-700 hover:text-gold-600"
               >
                 Ver

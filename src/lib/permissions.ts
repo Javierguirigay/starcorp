@@ -10,16 +10,15 @@ export type Area =
   | "finanzas"
   | "facturas"
   | "control-administrativo"
+  | "tarifas"
   | "ordenes"
   | "inventario"
-  | "equipos"
   | "mantenimiento";
 
 const AREAS_OPERACIONES: Area[] = [
   "inicio",
   "operaciones",
   "inventario",
-  "equipos",
   "mantenimiento",
 ];
 

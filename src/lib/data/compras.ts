@@ -5,7 +5,7 @@
  * base imponible 283.407,50; créditos fiscales 45.345,20; todas con retención
  * del 75 % (comprobantes 20260700000054 … 20260700000061).
  */
-import type { FacturaRecibida, Proveedor, Retencion } from "../types";
+import type { CuentaPorPagar, FacturaRecibida, Proveedor, Retencion } from "../types";
 import { lineaDesdeCompra, totalizarLineas } from "../negocio/retenciones";
 
 export const PROVEEDORES_SEED: Proveedor[] = [
@@ -23,14 +23,14 @@ export const NEXT_PROVEEDOR_ID = 9;
 
 /* Las 8 operaciones del libro real de julio (retencionId 1..8 = 75 % c/u). */
 export const FACTURAS_RECIBIDAS_SEED: FacturaRecibida[] = [
-  { id: 1, proveedorId: 1, numeroFactura: "5529", numeroControl: "Z7C7041516", fecha: "2026-07-02", tipoTransaccion: "01", totalConIvaBs: 31982.44, sinCreditoBs: 0, baseImponibleBs: 27571.07, impuestoIvaBs: 4411.37, estado: "pendiente", retencionId: 1 },
-  { id: 2, proveedorId: 2, numeroFactura: "17411", numeroControl: "ZZP0001841", fecha: "2026-07-02", tipoTransaccion: "01", totalConIvaBs: 75526.06, sinCreditoBs: 0, baseImponibleBs: 65108.67, impuestoIvaBs: 10417.39, estado: "pendiente", retencionId: 2 },
-  { id: 3, proveedorId: 3, numeroFactura: "004073", numeroControl: "1FC7000690", fecha: "2026-07-02", tipoTransaccion: "01", totalConIvaBs: 37102.6, sinCreditoBs: 0, baseImponibleBs: 31985.0, impuestoIvaBs: 5117.6, estado: "pendiente", retencionId: 3 },
-  { id: 4, proveedorId: 2, numeroFactura: "17516", numeroControl: "ZZP0001841", fecha: "2026-07-08", tipoTransaccion: "01", totalConIvaBs: 4065.61, sinCreditoBs: 0, baseImponibleBs: 3504.84, impuestoIvaBs: 560.77, estado: "pendiente", retencionId: 4 },
-  { id: 5, proveedorId: 4, numeroFactura: "000050", numeroControl: "00-001900", fecha: "2026-07-08", tipoTransaccion: "01", totalConIvaBs: 2721.27, sinCreditoBs: 0, baseImponibleBs: 2345.92, impuestoIvaBs: 375.35, estado: "pendiente", retencionId: 5 },
-  { id: 6, proveedorId: 5, numeroFactura: "003122", numeroControl: "00-006122", fecha: "2026-07-09", tipoTransaccion: "01", totalConIvaBs: 2760.0, sinCreditoBs: 0, baseImponibleBs: 2379.31, impuestoIvaBs: 380.69, estado: "pendiente", retencionId: 6 },
-  { id: 7, proveedorId: 6, numeroFactura: "000249", numeroControl: "00-000249", fecha: "2026-07-10", tipoTransaccion: "01", totalConIvaBs: 166362.27, sinCreditoBs: 0, baseImponibleBs: 143415.75, impuestoIvaBs: 22946.52, estado: "pendiente", retencionId: 7 },
-  { id: 8, proveedorId: 7, numeroFactura: "02509", numeroControl: "Z6B3001431", fecha: "2026-07-10", tipoTransaccion: "01", totalConIvaBs: 8232.45, sinCreditoBs: 0, baseImponibleBs: 7096.94, impuestoIvaBs: 1135.51, estado: "pendiente", retencionId: 8 },
+  { id: 1, proveedorId: 1, numeroFactura: "5529", numeroControl: "Z7C7041516", fecha: "2026-07-02", tipoTransaccion: "01", totalConIvaBs: 31982.44, sinCreditoBs: 0, baseImponibleBs: 27571.07, impuestoIvaBs: 4411.37, estado: "pagada", retencionId: 1 },
+  { id: 2, proveedorId: 2, numeroFactura: "17411", numeroControl: "ZZP0001841", fecha: "2026-07-02", tipoTransaccion: "01", totalConIvaBs: 75526.06, sinCreditoBs: 0, baseImponibleBs: 65108.67, impuestoIvaBs: 10417.39, estado: "pagada", retencionId: 2 },
+  { id: 3, proveedorId: 3, numeroFactura: "004073", numeroControl: "1FC7000690", fecha: "2026-07-02", tipoTransaccion: "01", totalConIvaBs: 37102.6, sinCreditoBs: 0, baseImponibleBs: 31985.0, impuestoIvaBs: 5117.6, estado: "pagada", retencionId: 3 },
+  { id: 4, proveedorId: 2, numeroFactura: "17516", numeroControl: "ZZP0001841", fecha: "2026-07-08", tipoTransaccion: "01", totalConIvaBs: 4065.61, sinCreditoBs: 0, baseImponibleBs: 3504.84, impuestoIvaBs: 560.77, estado: "pagada", retencionId: 4 },
+  { id: 5, proveedorId: 4, numeroFactura: "000050", numeroControl: "00-001900", fecha: "2026-07-08", tipoTransaccion: "01", totalConIvaBs: 2721.27, sinCreditoBs: 0, baseImponibleBs: 2345.92, impuestoIvaBs: 375.35, estado: "pagada", retencionId: 5 },
+  { id: 6, proveedorId: 5, numeroFactura: "003122", numeroControl: "00-006122", fecha: "2026-07-09", tipoTransaccion: "01", totalConIvaBs: 2760.0, sinCreditoBs: 0, baseImponibleBs: 2379.31, impuestoIvaBs: 380.69, estado: "pagada", retencionId: 6 },
+  { id: 7, proveedorId: 6, numeroFactura: "000249", numeroControl: "00-000249", fecha: "2026-07-10", tipoTransaccion: "01", totalConIvaBs: 166362.27, sinCreditoBs: 0, baseImponibleBs: 143415.75, impuestoIvaBs: 22946.52, estado: "pagada", retencionId: 7 },
+  { id: 8, proveedorId: 7, numeroFactura: "02509", numeroControl: "Z6B3001431", fecha: "2026-07-10", tipoTransaccion: "01", totalConIvaBs: 8232.45, sinCreditoBs: 0, baseImponibleBs: 7096.94, impuestoIvaBs: 1135.51, estado: "pagada", retencionId: 8 },
 ];
 
 export const NEXT_FACTURA_RECIBIDA_ID = 9;
@@ -56,3 +56,32 @@ export const RETENCIONES_SEED: Retencion[] = FACTURAS_RECIBIDAS_SEED.map((compra
 });
 
 export const NEXT_RETENCION_ID = 9;
+
+/* Cuentas por pagar (Control Administrativo): documentos administrativos aún
+   pendientes de pago. No son fiscales hasta que se pagan y se convierten en
+   factura recibida. Ejemplos de arranque para que la vista no nazca vacía. */
+export const CUENTAS_POR_PAGAR_SEED: CuentaPorPagar[] = [
+  {
+    id: 1,
+    tipo: "nota_entrega",
+    proveedorId: 2,
+    numeroDocumento: "NE-00842",
+    fecha: "2026-07-09",
+    fechaVencimiento: "2026-07-24",
+    totalBs: 18560.0,
+    descripcion: "Mangueras y conexiones para mantenimiento (pendiente de factura)",
+    estado: "pendiente",
+  },
+  {
+    id: 2,
+    tipo: "factura",
+    proveedorId: 8,
+    numeroDocumento: "01187",
+    fecha: "2026-07-11",
+    totalBs: 42350.0,
+    descripcion: "Autopartes — crédito a 30 días",
+    estado: "pendiente",
+  },
+];
+
+export const NEXT_CUENTA_POR_PAGAR_ID = 3;

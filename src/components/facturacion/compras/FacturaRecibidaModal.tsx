@@ -6,6 +6,10 @@
  *   impuestoIVA = base × 16%; total = base + impuesto + compraSinDerechoACredito;
  *   editar el total invierte: base = (total − sinCredito) / 1,16.
  *
+ * La factura recibida NACE PAGADA (es una compra ya pagada de la empresa,
+ * requisito para practicar la retención): al crearla se elige la categoría de
+ * Finanzas y se asienta la salida automática en Finanzas LOTER.
+ *
  * Con `proveedorLibre` (alta desde el Libro de Compras) el selector de
  * proveedores se sustituye por RIF + razón social escritos a mano: al guardar
  * se reutiliza el proveedor con ese RIF o se crea uno nuevo.
@@ -13,13 +17,18 @@
 import { useRef, useState } from "react";
 import { Plus, UploadCloud } from "lucide-react";
 import type { FacturaRecibida, TipoTransaccionCompra } from "@/lib/types";
-import { fmtISO, formatNumberVE, parseVES } from "@/lib/format";
+import { fmtISO, formatNumberVE, money, parseVES } from "@/lib/format";
 import { derivarMontosFacturaRecibida, impuestoDeBase } from "@/lib/negocio/compras";
+import { categoriasParaTipo } from "@/lib/negocio/finanzas";
 import { round2 } from "@/lib/negocio/nomina";
 import { Modal } from "@/components/ui/Modal";
+import { useFinanzas } from "@/components/finanzas/FinanzasProvider";
+import { SelectorCuenta } from "@/components/finanzas/SelectorCuenta";
 import { useFacturacion } from "../FacturacionProvider";
 import { VisorPdf } from "../VisorPdf";
 import { ProveedorModal } from "./ProveedorModal";
+
+const EMPRESA_ID = "loter";
 
 const inputCls =
   "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100";
@@ -43,7 +52,23 @@ export function FacturaRecibidaModal({
   onClose: () => void;
 }) {
   const fac = useFacturacion();
+  const finanzas = useFinanzas();
   const proveedorDeCompra = compra ? fac.proveedorPorId(compra.proveedorId) : undefined;
+
+  // Categorías de salida de Finanzas (la compra nace pagada ⇒ egreso automático).
+  const opcionesCategoria = categoriasParaTipo(
+    finanzas.categoriasDe(EMPRESA_ID),
+    EMPRESA_ID,
+    "salida"
+  );
+  const gastosOperativos = opcionesCategoria.find((c) => c.nombre === "Gastos Operativos");
+  const [categoriaId, setCategoriaId] = useState<number | "">(
+    gastosOperativos?.id ?? opcionesCategoria[0]?.id ?? ""
+  );
+  // Cuenta de Finanzas desde donde sale el pago (predeterminada de LOTER).
+  const [cuentaId, setCuentaId] = useState<number | "">(
+    () => finanzas.cuentaPredeterminadaDe(EMPRESA_ID)?.id ?? ""
+  );
 
   const [proveedorId, setProveedorId] = useState<number | "">(compra?.proveedorId ?? "");
   const [rif, setRif] = useState(proveedorDeCompra?.rif ?? "");
@@ -51,7 +76,6 @@ export function FacturaRecibidaModal({
   const [numeroFactura, setNumeroFactura] = useState(compra?.numeroFactura ?? "");
   const [numeroControl, setNumeroControl] = useState(compra?.numeroControl ?? "");
   const [fecha, setFecha] = useState(compra?.fecha ?? fechaInicial ?? fmtISO(new Date()));
-  const [fechaVencimiento, setFechaVencimiento] = useState(compra?.fechaVencimiento ?? "");
   const [notaDebito, setNotaDebito] = useState(compra?.notaDebito ?? "");
   const [notaCredito, setNotaCredito] = useState(compra?.notaCredito ?? "");
   const [facturaAfectada, setFacturaAfectada] = useState(compra?.facturaAfectada ?? "");
@@ -155,15 +179,24 @@ export function FacturaRecibidaModal({
     const total = round2(parseVES(totalTexto));
     if (base <= 0) return onToast("Indica la base imponible (o el total con IVA)");
     if (total <= 0) return onToast("Indica el total de compras con IVA");
+    // La compra nace pagada ⇒ egreso automático en Finanzas: requiere tasa y categoría.
+    if (!compra) {
+      if (categoriaId === "") return onToast("Selecciona la categoría de Finanzas (salida)");
+      if (cuentaId === "") return onToast("Selecciona la cuenta desde donde se paga");
+      if (finanzas.tasa <= 0)
+        return onToast("Indica una tasa Bs/USD válida antes de registrar la compra");
+    }
+    const resolvedProveedorId = proveedorLibre
+      ? resolverProveedorPorRif()
+      : (proveedorId as number);
     const datos = {
-      proveedorId: proveedorLibre ? resolverProveedorPorRif() : (proveedorId as number),
+      proveedorId: resolvedProveedorId,
       numeroFactura: numeroFactura.trim(),
       numeroControl: numeroControl.trim(),
       fecha,
       ...(notaDebito.trim() ? { notaDebito: notaDebito.trim() } : {}),
       ...(notaCredito.trim() ? { notaCredito: notaCredito.trim() } : {}),
       ...(facturaAfectada.trim() ? { facturaAfectada: facturaAfectada.trim() } : {}),
-      ...(fechaVencimiento ? { fechaVencimiento } : {}),
       tipoTransaccion,
       totalConIvaBs: total,
       sinCreditoBs: round2(parseVES(sinCreditoTexto)),
@@ -175,8 +208,25 @@ export function FacturaRecibidaModal({
       fac.editarFacturaRecibida(compra.id, datos);
       onToast("Factura recibida actualizada");
     } else {
+      // La nueva factura recibe este id; con él se enlaza el egreso en Finanzas.
+      const nuevaId = fac.nextFacturaRecibidaId;
+      const proveedorNombre = proveedorLibre
+        ? razonSocial.trim()
+        : fac.proveedorPorId(resolvedProveedorId)?.razonSocial ?? "—";
       fac.crearFacturaRecibida(datos);
-      onToast("Factura recibida registrada");
+      finanzas.registrarPagoCompra(
+        {
+          id: nuevaId,
+          numeroFactura: datos.numeroFactura,
+          totalBs: total,
+          proveedorNombre,
+          fecha: fmtISO(new Date()),
+          categoriaId: categoriaId as number,
+        },
+        EMPRESA_ID,
+        cuentaId as number
+      );
+      onToast("Factura recibida registrada · pagada (salida en Finanzas LOTER)");
     }
     onGuardado?.(fecha);
     cerrar(pdfUrl);
@@ -187,7 +237,7 @@ export function FacturaRecibidaModal({
       <Modal
         onClose={() => cerrar(compra?.pdfUrl)}
         title={compra ? "Editar factura recibida" : "Nueva factura recibida"}
-        subtitle="Compra a proveedor · montos en Bs"
+        subtitle="Compra a proveedor (pagada) · montos en Bs"
         maxWidth="max-w-6xl"
         footer={
           <>
@@ -304,27 +354,13 @@ export function FacturaRecibidaModal({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block text-sm font-600 text-navy-900">Tipo de transacción</label>
-                <select value={tipoTransaccion} onChange={(e) => setTipoTransaccion(e.target.value as TipoTransaccionCompra)} className={inputCls}>
-                  <option value="01">01 — Registro</option>
-                  <option value="02">02 — Complemento</option>
-                  <option value="03">03 — Anulación</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-600 text-navy-900">
-                  Vence el <span className="font-400 text-slate-400">(opcional)</span>
-                </label>
-                <input
-                  type="date"
-                  value={fechaVencimiento}
-                  onChange={(e) => setFechaVencimiento(e.target.value)}
-                  title="Fecha pactada de pago (Cuentas por Pagar)"
-                  className={inputCls}
-                />
-              </div>
+            <div>
+              <label className="mb-1 block text-sm font-600 text-navy-900">Tipo de transacción</label>
+              <select value={tipoTransaccion} onChange={(e) => setTipoTransaccion(e.target.value as TipoTransaccionCompra)} className={inputCls}>
+                <option value="01">01 — Registro</option>
+                <option value="02">02 — Complemento</option>
+                <option value="03">03 — Anulación</option>
+              </select>
             </div>
 
             <div className="rounded-xl border border-slate-200 p-3">
@@ -385,6 +421,38 @@ export function FacturaRecibidaModal({
                 </p>
               )}
             </div>
+
+            {/* La compra nace pagada ⇒ salida automática en Finanzas LOTER. */}
+            {!compra && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3">
+                <p className="mb-2 text-[11px] font-600 uppercase tracking-wide text-emerald-700">
+                  Se registra pagada · salida en Finanzas LOTER
+                </p>
+                <label className="mb-1 block text-sm font-600 text-navy-900">
+                  Categoría de Finanzas (salida)
+                </label>
+                <select
+                  value={categoriaId}
+                  onChange={(e) =>
+                    setCategoriaId(e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                  className={inputCls}
+                >
+                  {opcionesCategoria.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                  ))}
+                </select>
+                <label className="mb-1 mt-3 block text-sm font-600 text-navy-900">
+                  Cuenta desde donde se paga
+                </label>
+                <SelectorCuenta empresaId={EMPRESA_ID} value={cuentaId} onChange={setCuentaId} />
+                <p className="mt-2 text-xs text-emerald-800/80">
+                  {finanzas.tasa > 0
+                    ? `Equivale a ${money(round2(round2(parseVES(totalTexto)) / finanzas.tasa))} a la tasa vigente (${money(finanzas.tasa, "Bs")}/USD).`
+                    : "Indica una tasa Bs/USD válida para registrar el egreso."}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </Modal>

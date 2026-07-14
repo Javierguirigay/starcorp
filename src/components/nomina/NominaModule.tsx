@@ -21,7 +21,14 @@ import {
   NEXT_HIST_ID,
 } from "@/lib/data/empleados";
 import { fmtISO, formatFechaVE, money } from "@/lib/format";
-import { calcularConAdelanto, diario } from "@/lib/negocio/nomina";
+import {
+  calcularConAdelanto,
+  diario,
+  periodoActual,
+  periodoDesde,
+  periodoYaPagado,
+} from "@/lib/negocio/nomina";
+import { convertirMonto, fondosSuficientes, SIMBOLO_MONEDA } from "@/lib/negocio/finanzas";
 import {
   cancelarAdelanto,
   editarAdelanto,
@@ -31,6 +38,7 @@ import {
 import { construirRegistroPago } from "@/lib/negocio/pagos";
 import { useFinanzas } from "@/components/finanzas/FinanzasProvider";
 import { TasaInput } from "@/components/finanzas/TasaInput";
+import { SelectorCuenta } from "@/components/finanzas/SelectorCuenta";
 import type { AdelantoSueldo, CategoriaPago, Empleado, PagoHistorial } from "@/lib/types";
 import { Toast } from "@/components/ui/Toast";
 import { Avatar, BadgeCategoria, BadgeEstatus } from "./badges";
@@ -184,6 +192,9 @@ type ModalAbierto =
 
 type FiltroCat = "todos" | CategoriaPago;
 
+/** Pestañas del módulo: cada una muestra una de las tres secciones. */
+type TabNomina = "empleados" | "pago" | "historial";
+
 const tabCls = (activo: boolean) =>
   `rounded-lg px-3 py-1.5 text-xs font-600 ${
     activo ? "bg-navy-900 text-white" : "text-slate-500 hover:text-navy-900"
@@ -193,14 +204,37 @@ export function NominaModule() {
   const [estado, dispatch] = useReducer(reducer, ESTADO_INICIAL);
 
   // Tasa Bs/USD global compartida con Finanzas (única en toda la app).
-  const { tasa, registrarPagoNomina } = useFinanzas();
+  const { tasa, cuentas, transacciones, registrarPagoNomina, cuentaPredeterminadaDe } =
+    useFinanzas();
+  // Cuenta de Finanzas donde cae la salida del pago (predeterminada de LOTER).
+  const [cuentaPagoId, setCuentaPagoId] = useState<number | "">(
+    () => cuentaPredeterminadaDe("loter")?.id ?? ""
+  );
 
+  const [tabActiva, setTabActiva] = useState<TabNomina>("empleados");
   const [empFiltro, setEmpFiltro] = useState<FiltroCat>("todos");
   const [empBusqueda, setEmpBusqueda] = useState("");
   const [histFiltro, setHistFiltro] = useState<FiltroCat>("todos");
+  // El período se precarga con el que corresponde a HOY según la categoría; el
+  // usuario puede sobrescribirlo (pago adelantado).
+  const [hoy] = useState(() => fmtISO(new Date()));
   const [pagoCat, setPagoCat] = useState<CategoriaPago>("Semanal");
-  const [pagoDesde, setPagoDesde] = useState("2026-06-08");
-  const [pagoHasta, setPagoHasta] = useState("2026-06-14");
+  const [pagoDesde, setPagoDesde] = useState(() => periodoActual("Semanal", hoy).desde);
+  const [pagoHasta, setPagoHasta] = useState(() => periodoActual("Semanal", hoy).hasta);
+
+  // Al cambiar de categoría se precarga el período actual de esa modalidad.
+  const cambiarCategoria = (cat: CategoriaPago) => {
+    setPagoCat(cat);
+    const r = periodoActual(cat, hoy);
+    setPagoDesde(r.desde);
+    setPagoHasta(r.hasta);
+  };
+
+  // Al fijar el Desde se deriva el Hasta según el formato (Hasta sigue editable).
+  const cambiarDesde = (valor: string) => {
+    setPagoDesde(valor);
+    if (valor) setPagoHasta(periodoDesde(pagoCat, valor).hasta);
+  };
   const [modal, setModal] = useState<ModalAbierto>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -250,6 +284,38 @@ export function NominaModule() {
       setToast("Indica una tasa Bs/USD válida antes de registrar el pago");
       return;
     }
+    if (cuentaPagoId === "") {
+      setToast("Selecciona la cuenta desde donde se paga la nómina");
+      return;
+    }
+    // Evita registrar dos veces el mismo período (solapamiento de rango en la
+    // misma categoría): un repago duplicaría la salida en el historial financiero.
+    const yaPagado = periodoYaPagado(estado.historial, pagoCat, pagoDesde, pagoHasta);
+    if (yaPagado) {
+      setToast(
+        `Ya se registró un pago ${pagoCat} de este período (${formatFechaVE(
+          yaPagado.desde
+        )} → ${formatFechaVE(yaPagado.hasta)})`
+      );
+      return;
+    }
+    // La nómina no puede exceder el saldo de la cuenta pagadora. totNeto está en
+    // USD; se convierte a la moneda nativa de la cuenta igual que transaccionDeNomina.
+    const cuenta = cuentas.find((c) => c.id === cuentaPagoId);
+    if (cuenta) {
+      const montoNativo = convertirMonto(totNeto, "USD", cuenta.moneda, tasa);
+      const { ok, disponible } = fondosSuficientes(cuenta.id, montoNativo, transacciones);
+      if (!ok) {
+        const sim = SIMBOLO_MONEDA[cuenta.moneda];
+        setToast(
+          `Saldo insuficiente en ${cuenta.nombre}: disponible ${money(
+            disponible,
+            sim
+          )}, requerido ${money(montoNativo, sim)}`
+        );
+        return;
+      }
+    }
     const registrado = fmtISO(new Date());
     dispatch({
       tipo: "registrarPago",
@@ -272,7 +338,7 @@ export function NominaModule() {
       registrado,
       tasa,
     });
-    registrarPagoNomina(pago, "loter");
+    registrarPagoNomina(pago, "loter", cuentaPagoId);
     setToast((pagoCat === "Semanal" ? "Semana" : "Quincena") + " registrada en el historial");
   };
 
@@ -320,20 +386,38 @@ export function NominaModule() {
   return (
     <>
       {/* Encabezado */}
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-end gap-2">
           <TasaInput />
         </div>
-        <button
-          onClick={() => setModal({ tipo: "empleado", id: null })}
-          className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl bg-navy-900 px-4 py-2.5 text-sm font-600 text-white hover:bg-navy-800"
-        >
-          <UserPlus className="h-[18px] w-[18px]" /> Agregar empleado
-        </button>
+        {tabActiva === "empleados" && (
+          <button
+            onClick={() => setModal({ tipo: "empleado", id: null })}
+            className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl bg-navy-900 px-4 py-2.5 text-sm font-600 text-white hover:bg-navy-800"
+          >
+            <UserPlus className="h-[18px] w-[18px]" /> Agregar empleado
+          </button>
+        )}
+      </div>
+
+      {/* Pestañas del módulo */}
+      <div className="mb-5 inline-flex flex-wrap items-center gap-1 self-start rounded-xl border border-slate-200 bg-white p-1">
+        {(
+          [
+            ["empleados", "Empleados"],
+            ["pago", "Procesar pago"],
+            ["historial", "Historial de pagos"],
+          ] as [TabNomina, string][]
+        ).map(([key, label]) => (
+          <button key={key} onClick={() => setTabActiva(key)} className={tabCls(tabActiva === key)}>
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* 1) Empleados */}
-      <section className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
+      {tabActiva === "empleados" && (
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
         <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="font-display text-base font-700 text-navy-950">Empleados</h2>
@@ -447,8 +531,11 @@ export function NominaModule() {
         </div>
       </section>
 
+      )}
+
       {/* 2) Procesar pago */}
-      <section className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
+      {tabActiva === "pago" && (
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
         <div className="border-b border-slate-100 px-5 py-4">
           <h2 className="font-display text-base font-700 text-navy-950">Procesar pago</h2>
           <p className="text-xs text-slate-400">
@@ -464,7 +551,7 @@ export function NominaModule() {
             </label>
             <select
               value={pagoCat}
-              onChange={(e) => setPagoCat(e.target.value as CategoriaPago)}
+              onChange={(e) => cambiarCategoria(e.target.value as CategoriaPago)}
               className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100"
             >
               <option value="Semanal">Nómina semanal (7 días)</option>
@@ -478,7 +565,7 @@ export function NominaModule() {
             <input
               type="date"
               value={pagoDesde}
-              onChange={(e) => setPagoDesde(e.target.value)}
+              onChange={(e) => cambiarDesde(e.target.value)}
               className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100"
             />
           </div>
@@ -602,7 +689,10 @@ export function NominaModule() {
             {listaPago.length > 0 &&
               `${listaPago.length} empleado(s) ${pagoCat.toLowerCase()}(es) · período ${formatFechaVE(pagoDesde)} → ${formatFechaVE(pagoHasta)}`}
           </p>
-          <div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="sm:w-64">
+              <SelectorCuenta empresaId="loter" value={cuentaPagoId} onChange={setCuentaPagoId} />
+            </div>
             <button
               onClick={registrarPago}
               className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-600 text-white hover:bg-emerald-700"
@@ -614,7 +704,10 @@ export function NominaModule() {
         </div>
       </section>
 
+      )}
+
       {/* 3) Historial */}
+      {tabActiva === "historial" && (
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
         <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -713,12 +806,14 @@ export function NominaModule() {
           </table>
         </div>
       </section>
+      )}
 
       {/* Modales */}
       {modal?.tipo === "empleado" && (
         <EmpleadoModal
           key={modal.id ?? "nuevo"}
           empleado={modal.id !== null ? buscarEmp(modal.id) ?? null : null}
+          cargosExistentes={[...new Set(estado.empleados.map((e) => e.cargo).filter(Boolean))]}
           onGuardar={guardarEmpleado}
           onToast={setToast}
           onClose={() => setModal(null)}

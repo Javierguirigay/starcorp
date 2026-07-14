@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * KPI "Saldo consolidado" del dashboard: suma de los saldos reales de todas
- * las empresas. Cliente porque lee el libro mayor del FinanzasProvider.
+ * KPI "Saldo consolidado" del dashboard: suma de los saldos reales de las
+ * cuentas de todas las empresas, en USD a la tasa vigente (USDT 1:1, VES a
+ * tasa BCV). Cliente porque lee el libro mayor del FinanzasProvider.
  */
 import { Wallet } from "lucide-react";
 import { EMPRESAS } from "@/lib/data/empresas";
@@ -12,14 +13,14 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { useFinanzas } from "./FinanzasProvider";
 
 export function SaldoConsolidadoKpi() {
-  const { transacciones } = useFinanzas();
-  const total = saldoConsolidado(saldosDeEmpresas(EMPRESAS, transacciones));
+  const { transacciones, cuentas, tasa } = useFinanzas();
+  const total = saldoConsolidado(saldosDeEmpresas(EMPRESAS, cuentas, transacciones, tasa));
 
   return (
     <KpiCard
       label="Saldo consolidado"
-      valor={money(total.usd)}
-      sub={`${money(total.bs, "Bs")} equivalente`}
+      valor={money(total)}
+      sub={tasa > 0 ? `${money(total * tasa, "Bs")} equivalente` : "Tasa no disponible"}
       icon={Wallet}
       tone="gold"
     />

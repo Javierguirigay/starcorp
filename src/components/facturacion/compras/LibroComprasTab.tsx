@@ -6,17 +6,19 @@
  * quincenales, bloque RESUMEN como el formato real y exportación PDF
  * horizontal por corte.
  * Además permite dar de alta compras desde aquí (típicamente las que no
- * llevan retención): son facturas recibidas normales, así que la fila cae
- * ordenada por fecha y renumera el OPER-NRO. Editar/eliminar solo mientras la
- * compra siga pendiente y sin retención (misma regla que el resto de la app).
+ * llevan retención): son facturas recibidas normales (nacen pagadas), así que
+ * la fila cae ordenada por fecha y renumera el OPER-NRO. Se pueden eliminar
+ * mientras no tengan retención (la eliminación revierte su salida en Finanzas);
+ * no se editan una vez registradas y pagadas.
  */
 import { useEffect, useState } from "react";
-import { FileDown, Pencil, Plus, Trash2 } from "lucide-react";
+import { FileDown, Plus, Trash2 } from "lucide-react";
 import { formatFechaVE, formatNumberVE } from "@/lib/format";
 import { filasLibroCompras, resumenLibroCompras } from "@/lib/negocio/compras";
 import { enRango, etiquetaQuincena, rangoQuincena } from "@/lib/negocio/quincenas";
 import { MESES } from "@/lib/negocio/retenciones";
 import { Toast } from "@/components/ui/Toast";
+import { useFinanzas } from "@/components/finanzas/FinanzasProvider";
 import { useFacturacion } from "../FacturacionProvider";
 import { PdfPreviewModal, type PreviewPdf } from "../PdfPreviewModal";
 import { FacturaRecibidaModal } from "./FacturaRecibidaModal";
@@ -24,8 +26,11 @@ import { FacturaRecibidaModal } from "./FacturaRecibidaModal";
 const selectCls =
   "rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100";
 
+const EMPRESA_ID = "loter";
+
 export function LibroComprasTab() {
   const fac = useFacturacion();
+  const finanzas = useFinanzas();
   // Período seed (las 8 compras reales de julio 2026 caen en la 1ra quincena).
   const [anio, setAnio] = useState(2026);
   const [mes, setMes] = useState(7);
@@ -47,16 +52,22 @@ export function LibroComprasTab() {
   const resumen = resumenLibroCompras(filas);
   const periodo = etiquetaQuincena(anio, mes, quincena);
 
-  /** Pagadas o con retención generada quedan congeladas (regla del provider). */
-  const compraEditable = (compraId: number) => {
+  /** Con retención generada queda congelada; si no, se puede eliminar. */
+  const compraEliminable = (compraId: number) => {
     const c = fac.facturasRecibidas.find((x) => x.id === compraId);
-    return !!c && c.estado === "pendiente" && !c.retencionId;
+    return !!c && !c.retencionId;
   };
 
   const eliminar = (compraId: number, numeroFactura: string) => {
-    if (!confirm(`¿Eliminar la compra de la factura N° ${numeroFactura}?`)) return;
+    if (
+      !confirm(
+        `¿Eliminar la compra de la factura N° ${numeroFactura}? Se revertirá su salida en Finanzas.`
+      )
+    )
+      return;
     fac.eliminarFacturaRecibida(compraId);
-    setToast("Compra eliminada");
+    finanzas.eliminarPagoCompra(compraId, EMPRESA_ID);
+    setToast("Compra eliminada · salida de Finanzas revertida");
   };
 
   // La compra puede guardarse con una fecha de otro corte: se avisa para que no
@@ -209,18 +220,11 @@ export function LibroComprasTab() {
                       {f.ivaRetenidoBs ? formatNumberVE(f.ivaRetenidoBs) : "—"}
                     </td>
                     <td className="whitespace-nowrap px-2 py-2 text-right">
-                      {compraEditable(f.compraId) && (
+                      {compraEliminable(f.compraId) && (
                         <span className="inline-flex gap-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
                           <button
-                            onClick={() => setModal({ id: f.compraId })}
-                            title="Editar compra"
-                            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-navy-700"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
                             onClick={() => eliminar(f.compraId, f.numeroFactura)}
-                            title="Eliminar compra"
+                            title="Eliminar compra (revierte la salida en Finanzas)"
                             className="rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
                           >
                             <Trash2 className="h-3.5 w-3.5" />

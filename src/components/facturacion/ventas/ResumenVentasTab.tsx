@@ -9,9 +9,9 @@
  */
 import { useEffect, useState } from "react";
 import { FileDown } from "lucide-react";
-import { formatNumberVE, money } from "@/lib/format";
+import { formatFechaVE, formatNumberVE, money } from "@/lib/format";
 import { resumenDebitosMes } from "@/lib/negocio/facturacion";
-import { etiquetaMes, rangoMes } from "@/lib/negocio/quincenas";
+import { etiquetaQuincena, rangoQuincena } from "@/lib/negocio/quincenas";
 import { MESES } from "@/lib/negocio/retenciones";
 import { Toast } from "@/components/ui/Toast";
 import { useFacturacion } from "../FacturacionProvider";
@@ -25,6 +25,7 @@ export function ResumenVentasTab() {
   // Período seed (factura 000116: 18-06-2026 → junio).
   const [anio, setAnio] = useState(2026);
   const [mes, setMes] = useState(6);
+  const [quincena, setQuincena] = useState<1 | 2>(2);
   const [preview, setPreview] = useState<PreviewPdf | null>(null);
   const [generando, setGenerando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -35,9 +36,9 @@ export function ResumenVentasTab() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const rango = rangoMes(anio, mes);
+  const rango = rangoQuincena(anio, mes, quincena);
   const resumen = resumenDebitosMes(fac.facturas, rango);
-  const periodo = etiquetaMes(anio, mes);
+  const periodo = etiquetaQuincena(anio, mes, quincena);
 
   const filasBase = [
     { etq: "Ventas Internas No Gravadas", base: resumen.noGravadasBase, deb: null as number | null },
@@ -59,7 +60,9 @@ export function ResumenVentasTab() {
       );
       setPreview({
         url: URL.createObjectURL(blob),
-        nombre: `resumen_debitos_${slug(MESES[mes - 1])}_${anio}.pdf`,
+        nombre: `resumen_debitos_${slug(MESES[mes - 1])}_${anio}_${
+          quincena === 1 ? "1ra" : "2da"
+        }_quincena.pdf`,
         titulo: `Resumen de débitos fiscales — ${periodo}`,
       });
     } catch {
@@ -78,7 +81,7 @@ export function ResumenVentasTab() {
               Resumen de débitos fiscales IVA
             </h2>
             <p className="text-xs text-slate-400">
-              Calculado desde las facturas emitidas del mes (Libro de Ventas)
+              Calculado desde las facturas emitidas del período (Libro de Ventas)
             </p>
           </div>
           <button
@@ -86,7 +89,7 @@ export function ResumenVentasTab() {
             disabled={generando}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-600 text-navy-700 hover:bg-slate-50 disabled:opacity-50"
           >
-            <FileDown className="h-4 w-4" /> Exportar PDF del mes
+            <FileDown className="h-4 w-4" /> Exportar PDF del corte
           </button>
         </div>
 
@@ -108,8 +111,19 @@ export function ResumenVentasTab() {
               ))}
             </select>
           </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-600 uppercase tracking-wide text-slate-400">Quincena</label>
+            <select
+              value={quincena}
+              onChange={(e) => setQuincena(Number(e.target.value) as 1 | 2)}
+              className={selectCls}
+            >
+              <option value={1}>1RA (del 1 al 15)</option>
+              <option value={2}>2DA (del 16 al fin de mes)</option>
+            </select>
+          </div>
           <p className="ml-auto rounded-xl bg-navy-50/60 px-4 py-2.5 text-xs font-600 text-navy-700">
-            PERÍODO: {periodo}
+            PERÍODO: {periodo} · {formatFechaVE(rango.desde)} → {formatFechaVE(rango.hasta)}
           </p>
         </div>
 

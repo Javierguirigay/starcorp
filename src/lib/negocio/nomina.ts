@@ -5,7 +5,9 @@
  *   descuento = faltas * salario_diario
  *   neto      = (días - faltas) * salario_diario
  */
-import type { CategoriaPago, Empleado } from "../types";
+import type { CategoriaPago, Empleado, PagoHistorial } from "../types";
+import { fmtISO } from "../format";
+import { obtenerQuincena, rangoQuincena, type RangoFechas } from "./quincenas";
 
 export interface CalculoPago {
   dias: number;
@@ -57,6 +59,73 @@ export function calcularConAdelanto(
 /** Redondeo a 2 decimales como el original: +x.toFixed(2). */
 export function round2(n: number): number {
   return +n.toFixed(2);
+}
+
+/* ---------------- Períodos de pago (Desde/Hasta) ---------------- */
+
+const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})/;
+
+/** Lunes y domingo de la semana (lun–dom) que contiene la fecha ISO. */
+export function rangoSemana(fechaISO: string): RangoFechas {
+  const m = ISO_RE.exec(fechaISO ?? "");
+  if (!m) return { desde: fechaISO, hasta: fechaISO };
+  const anio = Number(m[1]);
+  const mes = Number(m[2]);
+  const dia = Number(m[3]);
+  // getDay(): 0=Dom … 6=Sáb. Retroceso hasta el lunes = (getDay()+6)%7.
+  const offsetLunes = (new Date(anio, mes - 1, dia).getDay() + 6) % 7;
+  const lunes = new Date(anio, mes - 1, dia - offsetLunes);
+  const domingo = new Date(anio, mes - 1, dia - offsetLunes + 6);
+  return { desde: fmtISO(lunes), hasta: fmtISO(domingo) };
+}
+
+/**
+ * Período que corresponde a HOY según la categoría: la semana lunes–domingo en
+ * curso (Semanal) o la quincena calendario 1–15 / 16–fin de mes (Quincenal).
+ */
+export function periodoActual(categoria: CategoriaPago, hoyISO: string): RangoFechas {
+  if (categoria === "Semanal") return rangoSemana(hoyISO);
+  const q = obtenerQuincena(hoyISO);
+  if (!q) return { desde: hoyISO, hasta: hoyISO };
+  return rangoQuincena(q.anio, q.mes, q.quincena);
+}
+
+/**
+ * Deriva el HASTA a partir de un DESDE elegido a mano (pago adelantado): el
+ * DESDE se respeta tal cual. Semanal → DESDE + 6 días; Quincenal → fin de la
+ * quincena calendario que contiene el DESDE.
+ */
+export function periodoDesde(categoria: CategoriaPago, desdeISO: string): RangoFechas {
+  const m = ISO_RE.exec(desdeISO ?? "");
+  if (!m) return { desde: desdeISO, hasta: desdeISO };
+  if (categoria === "Semanal") {
+    const domingo = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 6);
+    return { desde: desdeISO, hasta: fmtISO(domingo) };
+  }
+  const q = obtenerQuincena(desdeISO);
+  if (!q) return { desde: desdeISO, hasta: desdeISO };
+  return { desde: desdeISO, hasta: rangoQuincena(q.anio, q.mes, q.quincena).hasta };
+}
+
+/**
+ * Busca en el historial un pago de la MISMA categoría cuyo período se solape con
+ * [desde, hasta]. Dos rangos ISO (yyyy-mm-dd) se solapan si
+ *   a.desde <= b.hasta && b.desde <= a.hasta
+ * (comparación lexicográfica de strings ISO, correcta para fechas). Sirve para
+ * impedir pagar dos veces la misma semana/quincena aunque las fechas se hayan
+ * corrido a mano (pago adelantado). Devuelve el primer pago que solapa, o null.
+ */
+export function periodoYaPagado(
+  historial: PagoHistorial[],
+  categoria: CategoriaPago,
+  desde: string,
+  hasta: string
+): PagoHistorial | null {
+  return (
+    historial.find(
+      (h) => h.categoria === categoria && h.desde <= hasta && desde <= h.hasta
+    ) ?? null
+  );
 }
 
 /**

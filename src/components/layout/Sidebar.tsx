@@ -7,11 +7,11 @@ import {
   ClipboardCheck,
   ClipboardList,
   FileText,
-  Forklift,
   LayoutDashboard,
   LogOut,
   Package,
   Scale,
+  Tags,
   Users,
   Wallet,
   Wrench,
@@ -62,10 +62,9 @@ export function Sidebar() {
     { visible: puede(rol, "finanzas"), item: { key: "finanzas", href: `${ADMIN_BASE}/finanzas`, label: "Finanzas", icon: Wallet } },
     { visible: puede(rol, "facturas"), item: { key: "facturas", href: `${ADMIN_BASE}/facturas`, label: "Facturación y Compras", icon: FileText } },
     { visible: puede(rol, "control-administrativo"), item: { key: "control", href: `${ADMIN_BASE}/control-administrativo`, label: "Control Administrativo", icon: Scale } },
+    { visible: puede(rol, "tarifas"), item: { key: "tarifas", href: `${ADMIN_BASE}/gestion-tarifas`, label: "Gestión de Tarifas", icon: Tags } },
     { visible: puede(rol, "ordenes"), item: { key: "ordenes", href: `${ADMIN_BASE}/gestion-ordenes`, label: "Gestión de Órdenes", icon: ClipboardCheck } },
     { visible: puede(rol, "inventario"), item: { key: "inventario", href: `${ADMIN_BASE}/inventario`, label: "Inventario", icon: Package } },
-    { visible: puede(rol, "inventario"), item: { key: "equipos", href: `${ADMIN_BASE}/equipos`, label: "Equipos", icon: Forklift } },
-    { visible: puede(rol, "inventario"), item: { key: "mantenimiento", href: `${ADMIN_BASE}/mantenimiento`, label: "Mantenimiento", icon: Wrench } },
   ];
 
   const muestraAdmin =
@@ -120,6 +119,17 @@ export function Sidebar() {
         {puede(rol, "operaciones") && (
           <>
             <p className="px-3 pb-1 pt-3 text-[11px] font-500 text-slate-400">Operaciones</p>
+            {puede(rol, "mantenimiento") && (
+              <NavItem
+                item={{
+                  key: "mantenimiento",
+                  href: "/loter/operaciones/mantenimiento",
+                  label: "Mantenimiento",
+                  icon: Wrench,
+                }}
+                active={pathname === "/loter/operaciones/mantenimiento"}
+              />
+            )}
             <NavItem
               item={{
                 key: "asignacion",

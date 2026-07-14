@@ -24,6 +24,8 @@ interface PeriodoForm {
   desde: string;
   hasta: string;
   diasTexto: string;
+  /** USD referencial del servicio elegido del catálogo (undefined = texto libre). */
+  tarifaRef?: number;
 }
 
 export function ReporteModal({
@@ -54,6 +56,7 @@ export function ReporteModal({
       desde: p.desde,
       hasta: p.hasta,
       diasTexto: String(p.dias),
+      tarifaRef: p.tarifaRef,
     })) ?? [{ key: 1, concepto: "", desde: "", hasta: "", diasTexto: "" }]
   );
   const [nextKey, setNextKey] = useState((reporte?.periodos.length ?? 1) + 1);
@@ -69,6 +72,18 @@ export function ReporteModal({
     creados.current.push(url);
     setPdfUrl(url);
     setPdfNombre(f.name);
+  };
+
+  // Catálogo de servicios (Gestión de Tarifas) para el selector con filtro.
+  const tarifasActivas = fac.tarifas.filter((t) => t.activo);
+
+  // Al escribir/elegir el concepto: si coincide exacto con un servicio del
+  // catálogo, captura su tarifa referencial; si es texto libre, la limpia.
+  const alCambiarConcepto = (key: number, valor: string) => {
+    const match = tarifasActivas.find(
+      (t) => t.descripcion.toLowerCase() === valor.trim().toLowerCase()
+    );
+    editarPeriodo(key, { concepto: valor, tarifaRef: match?.tarifaRef });
   };
 
   const editarPeriodo = (key: number, cambios: Partial<PeriodoForm>) => {
@@ -115,6 +130,7 @@ export function ReporteModal({
         desde: p.desde,
         hasta: p.hasta,
         dias: parseInt(p.diasTexto, 10),
+        ...(p.tarifaRef ? { tarifaRef: p.tarifaRef } : {}),
       })),
       supervisorNombre: supervisorNombre.trim(),
       supervisorCI: supervisorCI.trim(),
@@ -249,12 +265,24 @@ export function ReporteModal({
                   <Plus className="h-3.5 w-3.5" /> Añadir período
                 </button>
               </div>
+              <datalist id="tarifas-catalogo">
+                {tarifasActivas.map((t) => (
+                  <option key={t.id} value={t.descripcion} />
+                ))}
+              </datalist>
               <div className="space-y-2">
                 {periodos.map((p) => (
                   <div key={p.key} className="flex items-end gap-2 rounded-xl border border-slate-200 p-2">
                     <div className="min-w-0 flex-1">
                       <label className="mb-0.5 block text-[10px] font-600 uppercase text-slate-400">Equipo / concepto</label>
-                      <input type="text" value={p.concepto} onChange={(e) => editarPeriodo(p.key, { concepto: e.target.value })} className={inputCls} />
+                      <input
+                        type="text"
+                        list="tarifas-catalogo"
+                        value={p.concepto}
+                        onChange={(e) => alCambiarConcepto(p.key, e.target.value)}
+                        placeholder="Elige un servicio o escribe uno…"
+                        className={inputCls}
+                      />
                     </div>
                     <div>
                       <label className="mb-0.5 block text-[10px] font-600 uppercase text-slate-400">Desde</label>

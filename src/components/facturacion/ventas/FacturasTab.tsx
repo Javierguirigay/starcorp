@@ -15,6 +15,7 @@ import { fmtISO, formatFechaVE, formatNumberVE, money } from "@/lib/format";
 import { totalesRenglones } from "@/lib/negocio/facturacion";
 import { Toast } from "@/components/ui/Toast";
 import { useFinanzas } from "@/components/finanzas/FinanzasProvider";
+import { CobroFacturaModal } from "@/components/finanzas/CobroFacturaModal";
 import { useFacturacion } from "../FacturacionProvider";
 import { BadgeEstadoDoc } from "../badges";
 import { PdfPreviewModal, type PreviewPdf } from "../PdfPreviewModal";
@@ -34,6 +35,7 @@ export function FacturasTab() {
   const [preview, setPreview] = useState<PreviewPdf | null>(null);
   const [generando, setGenerando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [cobrando, setCobrando] = useState<Factura | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -97,15 +99,9 @@ export function FacturasTab() {
     }
   };
 
-  const marcarCobrada = (f: Factura) => {
+  const confirmarCobro = (f: Factura, cuentaId: number) => {
     const total = totalesRenglones(f.renglones).total;
     const cliente = fac.clientePorId(f.clienteId);
-    if (
-      !confirm(
-        `¿Marcar cobrada la Factura N° ${f.numeroFactura} por Bs ${formatNumberVE(total)}? Se registrará la entrada en Finanzas LOTER.`
-      )
-    )
-      return;
     fac.marcarFacturaCobrada(f.id);
     finanzas.registrarCobroFactura(
       {
@@ -116,7 +112,8 @@ export function FacturasTab() {
         fecha: fmtISO(new Date()),
         clienteNombre: cliente?.razonSocial ?? "—",
       },
-      "loter"
+      "loter",
+      cuentaId
     );
     setToast("Cobro registrado en Finanzas LOTER");
   };
@@ -229,7 +226,7 @@ export function FacturasTab() {
                         {f.estado === "pendiente" && (
                           <button
                             title="Marcar cobrada (registra la entrada en Finanzas)"
-                            onClick={() => marcarCobrada(f)}
+                            onClick={() => setCobrando(f)}
                             className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-600 text-white hover:bg-emerald-700"
                           >
                             <CheckCheck className="h-3.5 w-3.5" /> Cobrada
@@ -245,6 +242,17 @@ export function FacturasTab() {
         </div>
       </section>
 
+      {cobrando && (
+        <CobroFacturaModal
+          empresaId="loter"
+          numeroFactura={cobrando.numeroFactura}
+          clienteNombre={fac.clientePorId(cobrando.clienteId)?.razonSocial ?? "—"}
+          totalBs={totalesRenglones(cobrando.renglones).total}
+          tasaBs={cobrando.tasaBs}
+          onConfirmar={(cuentaId) => confirmarCobro(cobrando, cuentaId)}
+          onClose={() => setCobrando(null)}
+        />
+      )}
       {calibrando && <CalibracionModal onToast={setToast} onClose={() => setCalibrando(false)} />}
       {preview && (
         <PdfPreviewModal preview={preview} onToast={setToast} onClose={() => setPreview(null)} />

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node crop_logo.cjs)",
+      "Bash(node verify_mejoras.cjs)",
+      "Bash(git add *)",
+      "Bash(git reset *)",
+      "Bash(git -c core.pager=cat diff --cached src/components/nomina/pdf/documentos.tsx)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
+    ]
+  }
+}

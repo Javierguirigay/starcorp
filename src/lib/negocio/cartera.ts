@@ -1,11 +1,18 @@
 /**
  * Cartera (cuentas por cobrar y por pagar): funciones puras.
- * Las filas se derivan de los documentos que ya existen —facturas de venta
- * pendientes y facturas recibidas pendientes—; no hay un modelo aparte.
+ * Por cobrar se deriva de las facturas de venta pendientes (no hay modelo
+ * aparte). Por pagar se deriva del modelo propio CuentaPorPagar (notas de
+ * entrega / facturas administrativas pendientes de pago).
  * Los montos viven en Bs (el equivalente en USD lo aplica la UI con la tasa
  * vigente, que no es un dato del documento).
  */
-import type { Cliente, Factura, FacturaRecibida, Proveedor } from "../types";
+import type {
+  Cliente,
+  CuentaPorPagar,
+  Factura,
+  Proveedor,
+  TipoDocPorPagar,
+} from "../types";
 import { totalesRenglones } from "./facturacion";
 import { round2 } from "./nomina";
 
@@ -49,7 +56,7 @@ export function estadoVencimiento(
 }
 
 /** Lo vencido primero, luego lo más próximo a vencer; sin fecha al final. */
-function ordenarPorUrgencia(filas: FilaCartera[]): FilaCartera[] {
+function ordenarPorUrgencia<T extends FilaCartera>(filas: T[]): T[] {
   const peso: Record<EstadoCartera, number> = {
     vencida: 0,
     "por-vencer": 1,
@@ -91,27 +98,33 @@ export function cuentasPorCobrar(
   return ordenarPorUrgencia(filas);
 }
 
-/** Facturas de compra aún no pagadas. El total ya viene persistido. */
+/** Fila de por pagar: además del común, lleva el tipo de documento. */
+export interface FilaPorPagar extends FilaCartera {
+  tipoDoc: TipoDocPorPagar;
+}
+
+/** Documentos por pagar (notas de entrega / facturas) aún pendientes de pago. */
 export function cuentasPorPagar(
-  compras: FacturaRecibida[],
+  docs: CuentaPorPagar[],
   proveedores: Proveedor[],
   hoy: string
-): FilaCartera[] {
-  const filas = compras
-    .filter((c) => c.estado === "pendiente")
-    .map((c) => {
-      const p = proveedores.find((x) => x.id === c.proveedorId);
-      const { estado, dias } = estadoVencimiento(c.fechaVencimiento, hoy);
+): FilaPorPagar[] {
+  const filas = docs
+    .filter((d) => d.estado === "pendiente")
+    .map((d) => {
+      const p = proveedores.find((x) => x.id === d.proveedorId);
+      const { estado, dias } = estadoVencimiento(d.fechaVencimiento, hoy);
       return {
-        id: c.id,
-        documento: c.numeroFactura,
+        id: d.id,
+        documento: d.numeroDocumento,
         contraparte: p?.razonSocial ?? "—",
         rif: p?.rif ?? "—",
-        fecha: c.fecha,
-        fechaVencimiento: c.fechaVencimiento,
-        totalBs: c.totalConIvaBs,
+        fecha: d.fecha,
+        fechaVencimiento: d.fechaVencimiento,
+        totalBs: d.totalBs,
         estado,
         dias,
+        tipoDoc: d.tipo,
       };
     });
   return ordenarPorUrgencia(filas);

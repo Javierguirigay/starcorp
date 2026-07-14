@@ -5,13 +5,14 @@
  * tarjetas del tab Grupo (balance del libro mayor de cada empresa).
  */
 import { EMPRESAS } from "@/lib/data/empresas";
+import type { Moneda } from "@/lib/types";
 import { money } from "@/lib/format";
-import { saldosDeEmpresas } from "@/lib/negocio/finanzas";
+import { saldosDeEmpresas, SIMBOLO_MONEDA } from "@/lib/negocio/finanzas";
 import { useFinanzas } from "./FinanzasProvider";
 
 export function SaldosEmpresasGrid() {
-  const { transacciones } = useFinanzas();
-  const saldos = saldosDeEmpresas(EMPRESAS, transacciones);
+  const { transacciones, cuentas, tasa } = useFinanzas();
+  const saldos = saldosDeEmpresas(EMPRESAS, cuentas, transacciones, tasa);
 
   return (
     <div className="grid grid-cols-1 gap-px bg-slate-100 sm:grid-cols-2">
@@ -30,8 +31,14 @@ export function SaldosEmpresasGrid() {
               </span>
             )}
           </div>
-          <p className="mt-3 font-mono text-2xl font-600 text-navy-950">{money(s.balanceUSD)}</p>
-          <p className="font-mono text-sm text-slate-400">{money(s.balanceBs, "Bs")}</p>
+          <p className="mt-3 font-mono text-2xl font-600 text-navy-950">
+            {money(s.consolidadoUSD)}
+          </p>
+          <p className="truncate font-mono text-sm text-slate-400">
+            {(Object.entries(s.porMoneda) as [Moneda, number][])
+              .map(([m, x]) => money(x, SIMBOLO_MONEDA[m]))
+              .join(" · ") || "Sin cuentas"}
+          </p>
         </div>
       ))}
     </div>

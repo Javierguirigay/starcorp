@@ -1,30 +1,23 @@
 "use client";
 
 /**
- * Cartera: un solo componente para Cuentas por Cobrar y por Pagar (las dos
- * tablas son la misma vista sobre documentos distintos). Las filas se derivan
- * de las facturas pendientes; no hay un modelo aparte.
- * El vencimiento se edita en línea porque los documentos existentes nacieron
- * sin fecha pactada.
+ * Cuentas por Cobrar: vista sobre las facturas de venta pendientes (no hay
+ * modelo aparte). El vencimiento se edita en línea porque los documentos
+ * existentes nacieron sin fecha pactada.
+ * (Cuentas por Pagar vive en su propio componente CuentasPorPagarTab, con un
+ * modelo administrativo propio.)
  */
 import { useEffect, useState } from "react";
-import { AlarmClock, CalendarClock, HandCoins, Wallet } from "lucide-react";
-import type { FacturaRecibida } from "@/lib/types";
+import { AlarmClock, CalendarClock, HandCoins } from "lucide-react";
 import { fmtISO, formatFechaVE, formatNumberVE, money } from "@/lib/format";
-import {
-  cuentasPorCobrar,
-  cuentasPorPagar,
-  totalesCartera,
-  type EstadoCartera,
-  type FilaCartera,
-} from "@/lib/negocio/cartera";
+import { cuentasPorCobrar, totalesCartera, type EstadoCartera, type FilaCartera } from "@/lib/negocio/cartera";
 import { totalesRenglones } from "@/lib/negocio/facturacion";
 import { round2 } from "@/lib/negocio/nomina";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Toast } from "@/components/ui/Toast";
 import { useFinanzas } from "@/components/finanzas/FinanzasProvider";
+import { CobroFacturaModal } from "@/components/finanzas/CobroFacturaModal";
 import { useFacturacion } from "@/components/facturacion/FacturacionProvider";
-import { PagoCompraModal } from "@/components/facturacion/compras/PagoCompraModal";
 
 const BADGE: Record<EstadoCartera, string> = {
   vencida: "bg-rose-50 text-rose-700",
@@ -46,12 +39,12 @@ function etiquetaEstado(f: FilaCartera): string {
   }
 }
 
-export function CarteraTab({ tipo }: { tipo: "cobrar" | "pagar" }) {
+export function CarteraTab() {
   const fac = useFacturacion();
   const finanzas = useFinanzas();
   const [toast, setToast] = useState<string | null>(null);
-  const [pagando, setPagando] = useState<FacturaRecibida | null>(null);
   const [hoy] = useState(() => fmtISO(new Date()));
+  const [cobrando, setCobrando] = useState<FilaCartera | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -59,28 +52,16 @@ export function CarteraTab({ tipo }: { tipo: "cobrar" | "pagar" }) {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const porCobrar = tipo === "cobrar";
-  const filas = porCobrar
-    ? cuentasPorCobrar(fac.facturas, fac.clientes, hoy)
-    : cuentasPorPagar(fac.facturasRecibidas, fac.proveedores, hoy);
+  const filas = cuentasPorCobrar(fac.facturas, fac.clientes, hoy);
   const totales = totalesCartera(filas);
 
   const enUSD = (bs: number) => (finanzas.tasa > 0 ? money(round2(bs / finanzas.tasa)) : "—");
 
-  const setVencimiento = (id: number, fecha: string) =>
-    porCobrar ? fac.setVencimientoFactura(id, fecha) : fac.setVencimientoCompra(id, fecha);
-
-  /* Cobro: marca la factura y registra la entrada en Finanzas (mismo par de
-     llamadas que la pestaña Facturas). */
-  const cobrar = (fila: FilaCartera) => {
+  /* Cobro: marca la factura y registra la entrada en Finanzas sobre la cuenta
+     elegida en el modal (mismo par de llamadas que la pestaña Facturas). */
+  const confirmarCobro = (fila: FilaCartera, cuentaId: number) => {
     const f = fac.facturas.find((x) => x.id === fila.id);
     if (!f) return;
-    if (
-      !confirm(
-        `¿Marcar cobrada la Factura N° ${f.numeroFactura} por Bs ${formatNumberVE(fila.totalBs)}? Se registrará la entrada en Finanzas LOTER.`
-      )
-    )
-      return;
     fac.marcarFacturaCobrada(f.id);
     finanzas.registrarCobroFactura(
       {
@@ -91,24 +72,20 @@ export function CarteraTab({ tipo }: { tipo: "cobrar" | "pagar" }) {
         fecha: fmtISO(new Date()),
         clienteNombre: fac.clientePorId(f.clienteId)?.razonSocial ?? "—",
       },
-      "loter"
+      "loter",
+      cuentaId
     );
     setToast("Cobro registrado en Finanzas LOTER");
-  };
-
-  const abrirPago = (fila: FilaCartera) => {
-    const c = fac.facturasRecibidas.find((x) => x.id === fila.id);
-    if (c) setPagando(c);
   };
 
   return (
     <>
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KpiCard
-          label={porCobrar ? "Total por cobrar" : "Total por pagar"}
+          label="Total por cobrar"
           valor={money(totales.pendienteBs, "Bs")}
           sub={`${totales.cantidad} documento(s) · ${enUSD(totales.pendienteBs)}`}
-          icon={porCobrar ? HandCoins : Wallet}
+          icon={HandCoins}
           tone="gold"
         />
         <KpiCard
@@ -127,13 +104,9 @@ export function CarteraTab({ tipo }: { tipo: "cobrar" | "pagar" }) {
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
         <div className="border-b border-slate-100 px-5 py-4">
-          <h2 className="font-display text-base font-700 text-navy-950">
-            {porCobrar ? "Cuentas por Cobrar" : "Cuentas por Pagar"}
-          </h2>
+          <h2 className="font-display text-base font-700 text-navy-950">Cuentas por Cobrar</h2>
           <p className="text-xs text-slate-400">
-            {porCobrar
-              ? "Facturas emitidas pendientes de cobro · lo vencido primero"
-              : "Facturas de compra pendientes de pago · lo vencido primero"}
+            Facturas emitidas pendientes de cobro · lo vencido primero
           </p>
         </div>
 
@@ -142,7 +115,7 @@ export function CarteraTab({ tipo }: { tipo: "cobrar" | "pagar" }) {
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[10px] uppercase tracking-wide text-slate-400">
                 <th className="px-4 py-3 font-600">N° Factura</th>
-                <th className="px-4 py-3 font-600">{porCobrar ? "Cliente" : "Proveedor"}</th>
+                <th className="px-4 py-3 font-600">Cliente</th>
                 <th className="px-4 py-3 font-600">RIF</th>
                 <th className="px-4 py-3 font-600">Emisión</th>
                 <th className="px-4 py-3 font-600">Vencimiento</th>
@@ -156,9 +129,7 @@ export function CarteraTab({ tipo }: { tipo: "cobrar" | "pagar" }) {
               {filas.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-400">
-                    {porCobrar
-                      ? "No hay facturas pendientes de cobro."
-                      : "No hay facturas pendientes de pago."}
+                    No hay facturas pendientes de cobro.
                   </td>
                 </tr>
               ) : (
@@ -176,8 +147,8 @@ export function CarteraTab({ tipo }: { tipo: "cobrar" | "pagar" }) {
                       <input
                         type="date"
                         value={f.fechaVencimiento ?? ""}
-                        onChange={(e) => setVencimiento(f.id, e.target.value)}
-                        title="Fecha pactada de pago"
+                        onChange={(e) => fac.setVencimientoFactura(f.id, e.target.value)}
+                        title="Fecha pactada de cobro"
                         className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100"
                       />
                     </td>
@@ -196,10 +167,10 @@ export function CarteraTab({ tipo }: { tipo: "cobrar" | "pagar" }) {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
                       <button
-                        onClick={() => (porCobrar ? cobrar(f) : abrirPago(f))}
+                        onClick={() => setCobrando(f)}
                         className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-600 text-navy-700 hover:bg-slate-50"
                       >
-                        {porCobrar ? "Marcar cobrada" : "Registrar pago"}
+                        Marcar cobrada
                       </button>
                     </td>
                   </tr>
@@ -226,13 +197,18 @@ export function CarteraTab({ tipo }: { tipo: "cobrar" | "pagar" }) {
         </div>
       </section>
 
-      {pagando && (
-        <PagoCompraModal
-          compra={pagando}
-          onToast={setToast}
-          onClose={() => setPagando(null)}
+      {cobrando && (
+        <CobroFacturaModal
+          empresaId="loter"
+          numeroFactura={cobrando.documento}
+          clienteNombre={cobrando.contraparte}
+          totalBs={cobrando.totalBs}
+          tasaBs={fac.facturas.find((x) => x.id === cobrando.id)?.tasaBs ?? finanzas.tasa}
+          onConfirmar={(cuentaId) => confirmarCobro(cobrando, cuentaId)}
+          onClose={() => setCobrando(null)}
         />
       )}
+
       {toast && <Toast mensaje={toast} />}
     </>
   );

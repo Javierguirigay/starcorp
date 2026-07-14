@@ -17,6 +17,7 @@ import type {
   CalibracionPlantilla,
   CampoPlantilla,
   Cliente,
+  CuentaPorPagar,
   Factura,
   FacturaRecibida,
   PosicionMm,
@@ -24,6 +25,7 @@ import type {
   Proveedor,
   ReporteServicio,
   Retencion,
+  TarifaServicio,
 } from "@/lib/types";
 import {
   CALIBRACION_DEFAULT,
@@ -37,13 +39,16 @@ import {
   REPORTES_SEED,
 } from "@/lib/data/facturacion";
 import {
+  CUENTAS_POR_PAGAR_SEED,
   FACTURAS_RECIBIDAS_SEED,
+  NEXT_CUENTA_POR_PAGAR_ID,
   NEXT_FACTURA_RECIBIDA_ID,
   NEXT_PROVEEDOR_ID,
   NEXT_RETENCION_ID,
   PROVEEDORES_SEED,
   RETENCIONES_SEED,
 } from "@/lib/data/compras";
+import { NEXT_TARIFA_ID, TARIFAS_SEED } from "@/lib/data/tarifas";
 import { convertirRenglonesATasa, siguienteNumero } from "@/lib/negocio/facturacion";
 import { siguienteComprobante } from "@/lib/negocio/retenciones";
 
@@ -56,7 +61,9 @@ interface EstadoFacturacion {
   prefacturas: PreFactura[];
   facturas: Factura[];
   facturasRecibidas: FacturaRecibida[];
+  cuentasPorPagar: CuentaPorPagar[];
   retenciones: Retencion[];
+  tarifas: TarifaServicio[];
   calibracion: CalibracionPlantilla;
   nextClienteId: number;
   nextProveedorId: number;
@@ -64,12 +71,16 @@ interface EstadoFacturacion {
   nextPrefacturaId: number;
   nextFacturaId: number;
   nextFacturaRecibidaId: number;
+  nextCuentaPorPagarId: number;
   nextRetencionId: number;
+  nextTarifaId: number;
 }
 
 export type ReporteDatos = Omit<ReporteServicio, "id" | "estado">;
+export type TarifaDatos = Omit<TarifaServicio, "id">;
 export type PrefacturaDatos = Omit<PreFactura, "id" | "estado" | "reporteIds">;
 export type FacturaRecibidaDatos = Omit<FacturaRecibida, "id" | "estado" | "retencionId">;
+export type CuentaPorPagarDatos = Omit<CuentaPorPagar, "id" | "estado" | "facturaRecibidaId">;
 export type RetencionDatos = Omit<Retencion, "id">;
 
 export interface GenerarFacturaDatos {
@@ -94,12 +105,21 @@ type Accion =
   | { tipo: "crearFacturaRecibida"; datos: FacturaRecibidaDatos }
   | { tipo: "editarFacturaRecibida"; id: number; datos: FacturaRecibidaDatos }
   | { tipo: "eliminarFacturaRecibida"; id: number }
-  | { tipo: "marcarCompraPagada"; id: number }
+  // Cuentas por pagar (Control Administrativo): modelo propio no fiscal.
+  | { tipo: "crearCuentaPorPagar"; datos: CuentaPorPagarDatos }
+  | { tipo: "editarCuentaPorPagar"; id: number; datos: CuentaPorPagarDatos }
+  | { tipo: "eliminarCuentaPorPagar"; id: number }
+  | { tipo: "setVencimientoCuentaPorPagar"; id: number; fecha: string }
+  // Pago: convierte la cuenta por pagar en factura recibida (ya pagada).
+  | { tipo: "pagarCuentaPorPagar"; id: number; datos: FacturaRecibidaDatos }
   // Vencimiento editable desde la cartera (Control Administrativo).
   | { tipo: "setVencimientoFactura"; id: number; fecha: string }
-  | { tipo: "setVencimientoCompra"; id: number; fecha: string }
   | { tipo: "crearRetencion"; datos: RetencionDatos }
   | { tipo: "eliminarRetencion"; id: number }
+  // Gestión de Tarifas (catálogo de servicios referenciales).
+  | { tipo: "crearTarifa"; datos: TarifaDatos }
+  | { tipo: "editarTarifa"; id: number; datos: TarifaDatos }
+  | { tipo: "eliminarTarifa"; id: number }
   | { tipo: "setCalibracionCampo"; campo: CampoPlantilla; pos: PosicionMm }
   | { tipo: "setCalibracionBase"; valores: Partial<Omit<CalibracionPlantilla, "campos">> }
   | { tipo: "resetCalibracion" };
@@ -111,7 +131,9 @@ const ESTADO_INICIAL: EstadoFacturacion = {
   prefacturas: PREFACTURAS_SEED,
   facturas: FACTURAS_SEED,
   facturasRecibidas: FACTURAS_RECIBIDAS_SEED,
+  cuentasPorPagar: CUENTAS_POR_PAGAR_SEED,
   retenciones: RETENCIONES_SEED,
+  tarifas: TARIFAS_SEED,
   calibracion: CALIBRACION_DEFAULT,
   nextClienteId: NEXT_CLIENTE_ID,
   nextProveedorId: NEXT_PROVEEDOR_ID,
@@ -119,7 +141,9 @@ const ESTADO_INICIAL: EstadoFacturacion = {
   nextPrefacturaId: NEXT_PREFACTURA_ID,
   nextFacturaId: NEXT_FACTURA_ID,
   nextFacturaRecibidaId: NEXT_FACTURA_RECIBIDA_ID,
+  nextCuentaPorPagarId: NEXT_CUENTA_POR_PAGAR_ID,
   nextRetencionId: NEXT_RETENCION_ID,
+  nextTarifaId: NEXT_TARIFA_ID,
 };
 
 function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
@@ -244,12 +268,15 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
         ),
       };
 
+    // Las facturas recibidas nacen PAGADAS: son compras ya pagadas de la
+    // empresa (requisito para poder practicar la retención). El egreso se
+    // asienta en Finanzas desde la UI (patrón de dos llamadas).
     case "crearFacturaRecibida":
       return {
         ...estado,
         facturasRecibidas: [
           ...estado.facturasRecibidas,
-          { id: estado.nextFacturaRecibidaId, ...accion.datos, estado: "pendiente" },
+          { id: estado.nextFacturaRecibidaId, ...accion.datos, estado: "pagada" },
         ],
         nextFacturaRecibidaId: estado.nextFacturaRecibidaId + 1,
       };
@@ -258,28 +285,73 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
       return {
         ...estado,
         facturasRecibidas: estado.facturasRecibidas.map((c) =>
-          // Pagadas o con retención generada quedan congeladas.
-          c.id === accion.id && c.estado === "pendiente" && !c.retencionId
-            ? { ...c, ...accion.datos }
-            : c
+          // Con retención generada quedan congeladas.
+          c.id === accion.id && !c.retencionId ? { ...c, ...accion.datos } : c
         ),
       };
 
     case "eliminarFacturaRecibida":
       return {
         ...estado,
+        // Eliminable mientras no tenga retención (la reversa en Finanzas la
+        // dispara la UI). Con retención generada queda congelada.
         facturasRecibidas: estado.facturasRecibidas.filter(
-          (c) => c.id !== accion.id || c.estado !== "pendiente" || !!c.retencionId
+          (c) => c.id !== accion.id || !!c.retencionId
         ),
       };
 
-    case "marcarCompraPagada":
+    case "crearCuentaPorPagar":
       return {
         ...estado,
-        facturasRecibidas: estado.facturasRecibidas.map((c) =>
-          c.id === accion.id && c.estado === "pendiente" ? { ...c, estado: "pagada" } : c
+        cuentasPorPagar: [
+          ...estado.cuentasPorPagar,
+          { id: estado.nextCuentaPorPagarId, ...accion.datos, estado: "pendiente" },
+        ],
+        nextCuentaPorPagarId: estado.nextCuentaPorPagarId + 1,
+      };
+
+    case "editarCuentaPorPagar":
+      return {
+        ...estado,
+        cuentasPorPagar: estado.cuentasPorPagar.map((d) =>
+          d.id === accion.id && d.estado === "pendiente" ? { ...d, ...accion.datos } : d
         ),
       };
+
+    case "eliminarCuentaPorPagar":
+      return {
+        ...estado,
+        cuentasPorPagar: estado.cuentasPorPagar.filter(
+          (d) => d.id !== accion.id || d.estado !== "pendiente"
+        ),
+      };
+
+    case "setVencimientoCuentaPorPagar":
+      return {
+        ...estado,
+        cuentasPorPagar: estado.cuentasPorPagar.map((d) =>
+          d.id === accion.id ? { ...d, fechaVencimiento: accion.fecha || undefined } : d
+        ),
+      };
+
+    // Pago de una cuenta por pagar: crea la factura recibida (ya pagada) con
+    // los datos fiscales capturados y marca la cuenta como pagada, enlazándola.
+    case "pagarCuentaPorPagar": {
+      const cuenta = estado.cuentasPorPagar.find((d) => d.id === accion.id);
+      if (!cuenta || cuenta.estado !== "pendiente") return estado;
+      const nuevaId = estado.nextFacturaRecibidaId;
+      return {
+        ...estado,
+        facturasRecibidas: [
+          ...estado.facturasRecibidas,
+          { id: nuevaId, ...accion.datos, estado: "pagada" },
+        ],
+        nextFacturaRecibidaId: nuevaId + 1,
+        cuentasPorPagar: estado.cuentasPorPagar.map((d) =>
+          d.id === accion.id ? { ...d, estado: "pagada", facturaRecibidaId: nuevaId } : d
+        ),
+      };
+    }
 
     // Fecha vacía ⇒ se quita el vencimiento (la cuenta deja de vencer).
     case "setVencimientoFactura":
@@ -287,14 +359,6 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
         ...estado,
         facturas: estado.facturas.map((f) =>
           f.id === accion.id ? { ...f, fechaVencimiento: accion.fecha || undefined } : f
-        ),
-      };
-
-    case "setVencimientoCompra":
-      return {
-        ...estado,
-        facturasRecibidas: estado.facturasRecibidas.map((c) =>
-          c.id === accion.id ? { ...c, fechaVencimiento: accion.fecha || undefined } : c
         ),
       };
 
@@ -328,6 +392,27 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
         ),
       };
 
+    case "crearTarifa":
+      return {
+        ...estado,
+        tarifas: [...estado.tarifas, { id: estado.nextTarifaId, ...accion.datos }],
+        nextTarifaId: estado.nextTarifaId + 1,
+      };
+
+    case "editarTarifa":
+      return {
+        ...estado,
+        tarifas: estado.tarifas.map((t) =>
+          t.id === accion.id ? { id: t.id, ...accion.datos } : t
+        ),
+      };
+
+    case "eliminarTarifa":
+      return {
+        ...estado,
+        tarifas: estado.tarifas.filter((t) => t.id !== accion.id),
+      };
+
     case "setCalibracionCampo":
       return {
         ...estado,
@@ -354,11 +439,15 @@ interface FacturacionContexto {
   prefacturas: PreFactura[];
   facturas: Factura[];
   facturasRecibidas: FacturaRecibida[];
+  cuentasPorPagar: CuentaPorPagar[];
   retenciones: Retencion[];
+  tarifas: TarifaServicio[];
   calibracion: CalibracionPlantilla;
   /** Ids que recibirá el próximo registro (autoselección al crear al vuelo). */
   nextClienteId: number;
   nextProveedorId: number;
+  /** Id que recibirá la próxima factura recibida (para enlazar el pago en Finanzas). */
+  nextFacturaRecibidaId: number;
   clientePorId: (id: number) => Cliente | undefined;
   proveedorPorId: (id: number) => Proveedor | undefined;
   retencionDeCompra: (facturaRecibidaId: number) => Retencion | undefined;
@@ -378,11 +467,17 @@ interface FacturacionContexto {
   crearFacturaRecibida: (datos: FacturaRecibidaDatos) => void;
   editarFacturaRecibida: (id: number, datos: FacturaRecibidaDatos) => void;
   eliminarFacturaRecibida: (id: number) => void;
-  marcarCompraPagada: (id: number) => void;
+  crearCuentaPorPagar: (datos: CuentaPorPagarDatos) => void;
+  editarCuentaPorPagar: (id: number, datos: CuentaPorPagarDatos) => void;
+  eliminarCuentaPorPagar: (id: number) => void;
+  setVencimientoCuentaPorPagar: (id: number, fecha: string) => void;
+  pagarCuentaPorPagar: (id: number, datos: FacturaRecibidaDatos) => void;
   setVencimientoFactura: (id: number, fecha: string) => void;
-  setVencimientoCompra: (id: number, fecha: string) => void;
   crearRetencion: (datos: RetencionDatos) => void;
   eliminarRetencion: (id: number) => void;
+  crearTarifa: (datos: TarifaDatos) => void;
+  editarTarifa: (id: number, datos: TarifaDatos) => void;
+  eliminarTarifa: (id: number) => void;
   setCalibracionCampo: (campo: CampoPlantilla, pos: PosicionMm) => void;
   setCalibracionBase: (valores: Partial<Omit<CalibracionPlantilla, "campos">>) => void;
   resetCalibracion: () => void;
@@ -401,10 +496,13 @@ export function FacturacionProvider({ children }: { children: React.ReactNode })
       prefacturas: estado.prefacturas,
       facturas: estado.facturas,
       facturasRecibidas: estado.facturasRecibidas,
+      cuentasPorPagar: estado.cuentasPorPagar,
       retenciones: estado.retenciones,
+      tarifas: estado.tarifas,
       calibracion: estado.calibracion,
       nextClienteId: estado.nextClienteId,
       nextProveedorId: estado.nextProveedorId,
+      nextFacturaRecibidaId: estado.nextFacturaRecibidaId,
       clientePorId: (id) => estado.clientes.find((c) => c.id === id),
       proveedorPorId: (id) => estado.proveedores.find((p) => p.id === id),
       retencionDeCompra: (facturaRecibidaId) =>
@@ -430,11 +528,19 @@ export function FacturacionProvider({ children }: { children: React.ReactNode })
       editarFacturaRecibida: (id, datos) =>
         dispatch({ tipo: "editarFacturaRecibida", id, datos }),
       eliminarFacturaRecibida: (id) => dispatch({ tipo: "eliminarFacturaRecibida", id }),
-      marcarCompraPagada: (id) => dispatch({ tipo: "marcarCompraPagada", id }),
+      crearCuentaPorPagar: (datos) => dispatch({ tipo: "crearCuentaPorPagar", datos }),
+      editarCuentaPorPagar: (id, datos) =>
+        dispatch({ tipo: "editarCuentaPorPagar", id, datos }),
+      eliminarCuentaPorPagar: (id) => dispatch({ tipo: "eliminarCuentaPorPagar", id }),
+      setVencimientoCuentaPorPagar: (id, fecha) =>
+        dispatch({ tipo: "setVencimientoCuentaPorPagar", id, fecha }),
+      pagarCuentaPorPagar: (id, datos) => dispatch({ tipo: "pagarCuentaPorPagar", id, datos }),
       setVencimientoFactura: (id, fecha) => dispatch({ tipo: "setVencimientoFactura", id, fecha }),
-      setVencimientoCompra: (id, fecha) => dispatch({ tipo: "setVencimientoCompra", id, fecha }),
       crearRetencion: (datos) => dispatch({ tipo: "crearRetencion", datos }),
       eliminarRetencion: (id) => dispatch({ tipo: "eliminarRetencion", id }),
+      crearTarifa: (datos) => dispatch({ tipo: "crearTarifa", datos }),
+      editarTarifa: (id, datos) => dispatch({ tipo: "editarTarifa", id, datos }),
+      eliminarTarifa: (id) => dispatch({ tipo: "eliminarTarifa", id }),
       setCalibracionCampo: (campo, pos) => dispatch({ tipo: "setCalibracionCampo", campo, pos }),
       setCalibracionBase: (valores) => dispatch({ tipo: "setCalibracionBase", valores }),
       resetCalibracion: () => dispatch({ tipo: "resetCalibracion" }),

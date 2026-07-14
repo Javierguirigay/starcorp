@@ -55,7 +55,13 @@ export function PrefacturaModal({
         .flatMap((r) => r.periodos)
         .map((p, i) => {
           const sug = renglonDeReporte(p);
-          return { key: i + 1, canTexto: String(sug.can), descripcion: sug.descripcion, pUnitTexto: "" };
+          return {
+            key: i + 1,
+            canTexto: String(sug.can),
+            descripcion: sug.descripcion,
+            // Precarga la tarifa referencial del catálogo (editable); vacío si fue texto libre.
+            pUnitTexto: sug.pUnit ? formatNumberVE(sug.pUnit) : "",
+          };
         });
     return [{ key: 1, canTexto: "1", descripcion: "", pUnitTexto: "" }];
   };

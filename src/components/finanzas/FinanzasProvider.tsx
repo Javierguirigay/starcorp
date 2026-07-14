@@ -4,8 +4,8 @@
  * Estado compartido de Finanzas (Context + useReducer), montado en el layout
  * de la app para sobrevivir a la navegación entre páginas. Fuente única de:
  *   - la tasa Bs/USD global (Nómina la lee/escribe desde aquí),
- *   - las categorías y transacciones financieras por empresa,
- *   - el historial de movimientos del Grupo.
+ *   - las cuentas, categorías y transacciones financieras por empresa,
+ *   - los traspasos entre cuentas propias y el historial del Grupo.
  * Los movimientos automáticos (nómina, transferencias) viven en el reducer,
  * no en la UI que los dispara, para servir igual a futuras empresas.
  * Fase mock: todo en memoria; la forma (arrays planos + empresaId) está
@@ -14,26 +14,36 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
 import type {
   CategoriaFinanciera,
+  CuentaFinanciera,
+  Moneda,
   MovimientoGrupo,
   PagoHistorial,
   TipoCategoria,
   TipoTransaccion,
   TransaccionFinanciera,
+  TraspasoInterno,
 } from "@/lib/types";
 import {
   CATEGORIAS_SEED,
+  CUENTAS_SEED,
   MOVIMIENTOS_GRUPO_SEED,
   NEXT_CATEGORIA_ID,
+  NEXT_CUENTA_ID,
   NEXT_MOVIMIENTO_ID,
   NEXT_TRANSACCION_ID,
+  NEXT_TRASPASO_ID,
   TRANSACCIONES_SEED,
+  TRASPASOS_SEED,
 } from "@/lib/data/finanzas";
 import { EMPRESAS } from "@/lib/data/empresas";
 import { TASA_INICIAL } from "@/lib/data/empleados";
 import { USUARIO_ACTUAL } from "@/lib/config";
 import {
+  cuentaPredeterminada,
   espejosDeTransferencia,
+  espejosDeTraspaso,
   puedeEliminarCategoria,
+  puedeEliminarCuenta,
   transaccionDeCompra,
   transaccionDeFactura,
   transaccionDeNomina,
@@ -61,32 +71,67 @@ interface EstadoFinanzas {
   tasaTexto: string; // "36.50" — fuente única de la tasa global
   tasaBcv: TasaBcvInfo;
   categorias: CategoriaFinanciera[];
+  cuentas: CuentaFinanciera[];
   transacciones: TransaccionFinanciera[];
+  traspasos: TraspasoInterno[];
   movimientosGrupo: MovimientoGrupo[];
   nextCategoriaId: number;
+  nextCuentaId: number;
   nextTransaccionId: number;
+  nextTraspasoId: number;
   nextMovimientoId: number;
 }
 
-/** Datos de una transacción manual (alta o edición). */
+/** Datos de una transacción manual (alta o edición). La moneda se deriva de
+    la cuenta en el reducer; el monto es NATIVO en esa moneda. */
 export interface TransaccionDatos {
   empresaId: string;
+  cuentaId: number;
   tipo: TipoTransaccion;
   categoriaId: number;
-  montoUSD: number;
-  fecha: string; // ISO
-  descripcion: string;
-}
-
-/** Datos del formulario de transferencia entre empresas del grupo. */
-export interface TransferenciaDatos {
-  origenKey: string;
-  destinoKey: string;
-  moneda: "USD" | "Bs";
   monto: number;
   fecha: string; // ISO
   descripcion: string;
+  observaciones?: string;
 }
+
+/** Datos del formulario de cuenta (alta o edición). */
+export interface CuentaDatos {
+  nombre: string;
+  moneda: Moneda;
+  predeterminada: boolean;
+  activa: boolean;
+}
+
+/** Datos de un traspaso entre cuentas propias (alta o edición). Las monedas
+    se derivan de las cuentas en el reducer. */
+export interface TraspasoDatos {
+  empresaId: string;
+  cuentaOrigenId: number;
+  cuentaDestinoId: number;
+  montoOrigen: number;
+  montoDestino: number;
+  fecha: string; // ISO
+  descripcion: string;
+  observaciones?: string;
+}
+
+/** Datos del formulario de transferencia entre empresas del grupo. Las
+    monedas se derivan de las cuentas elegidas en el reducer. */
+export interface TransferenciaDatos {
+  origenKey: string;
+  destinoKey: string;
+  cuentaOrigenId: number;
+  cuentaDestinoId: number;
+  montoOrigen: number;
+  montoDestino: number;
+  fecha: string; // ISO
+  descripcion: string;
+  observaciones?: string;
+}
+
+/** Campos editables de un movimiento del grupo (id, usuario y tasa snapshot se conservan). */
+export type MovimientoGrupoDatos = Omit<MovimientoGrupo, "id" | "usuario" | "tasaBs">;
 
 type AccionFinanzas =
   | { tipo: "setTasa"; texto: string }
@@ -97,22 +142,35 @@ type AccionFinanzas =
   | { tipo: "crearCategoria"; empresaId: string; nombre: string; tipoCategoria: TipoCategoria }
   | { tipo: "editarCategoria"; id: number; nombre: string; tipoCategoria: TipoCategoria }
   | { tipo: "eliminarCategoria"; id: number }
+  | { tipo: "crearCuenta"; empresaId: string; datos: CuentaDatos }
+  | { tipo: "editarCuenta"; id: number; datos: CuentaDatos }
+  | { tipo: "eliminarCuenta"; id: number }
   | { tipo: "crearTransaccion"; datos: TransaccionDatos }
   | { tipo: "editarTransaccion"; id: number; datos: TransaccionDatos }
   | { tipo: "eliminarTransaccion"; id: number }
+  | { tipo: "registrarTraspaso"; datos: TraspasoDatos }
+  | { tipo: "editarTraspaso"; id: number; datos: TraspasoDatos }
+  | { tipo: "eliminarTraspaso"; id: number }
   | { tipo: "registrarTransferenciaGrupo"; datos: TransferenciaDatos }
-  | { tipo: "registrarPagoNomina"; pago: PagoHistorial; empresaId: string }
-  | { tipo: "registrarCobroFactura"; datos: CobroFacturaDatos; empresaId: string }
-  | { tipo: "registrarPagoCompra"; datos: PagoCompraDatos; empresaId: string };
+  | { tipo: "editarMovimientoGrupo"; id: number; datos: MovimientoGrupoDatos }
+  | { tipo: "eliminarMovimientoGrupo"; id: number }
+  | { tipo: "registrarPagoNomina"; pago: PagoHistorial; empresaId: string; cuentaId: number }
+  | { tipo: "registrarCobroFactura"; datos: CobroFacturaDatos; empresaId: string; cuentaId: number }
+  | { tipo: "registrarPagoCompra"; datos: PagoCompraDatos; empresaId: string; cuentaId: number }
+  | { tipo: "eliminarPagoCompra"; facturaRecibidaId: number; empresaId: string };
 
 const ESTADO_INICIAL: EstadoFinanzas = {
   tasaTexto: TASA_INICIAL.toFixed(2), // fallback si el BCV no responde
   tasaBcv: { estado: "cargando" },
   categorias: CATEGORIAS_SEED,
+  cuentas: CUENTAS_SEED,
   transacciones: TRANSACCIONES_SEED,
+  traspasos: TRASPASOS_SEED,
   movimientosGrupo: MOVIMIENTOS_GRUPO_SEED,
   nextCategoriaId: NEXT_CATEGORIA_ID,
+  nextCuentaId: NEXT_CUENTA_ID,
   nextTransaccionId: NEXT_TRANSACCION_ID,
+  nextTraspasoId: NEXT_TRASPASO_ID,
   nextMovimientoId: NEXT_MOVIMIENTO_ID,
 };
 
@@ -124,6 +182,17 @@ function tasaDe(estado: EstadoFinanzas): number {
 
 function nombreEmpresa(key: string): string {
   return EMPRESAS.find((e) => e.key === key)?.nombre ?? key;
+}
+
+function cuentaDe(estado: EstadoFinanzas, id: number): CuentaFinanciera | undefined {
+  return estado.cuentas.find((c) => c.id === id);
+}
+
+/** Marca `id` como predeterminada de su empresa desmarcando la anterior. */
+function conPredeterminada(cuentas: CuentaFinanciera[], id: number, empresaId: string) {
+  return cuentas.map((c) =>
+    c.empresaId !== empresaId ? c : { ...c, predeterminada: c.id === id }
+  );
 }
 
 function reducer(estado: EstadoFinanzas, accion: AccionFinanzas): EstadoFinanzas {
@@ -182,7 +251,54 @@ function reducer(estado: EstadoFinanzas, accion: AccionFinanzas): EstadoFinanzas
       return { ...estado, categorias: estado.categorias.filter((c) => c.id !== accion.id) };
     }
 
-    case "crearTransaccion":
+    case "crearCuenta": {
+      const nueva: CuentaFinanciera = {
+        id: estado.nextCuentaId,
+        empresaId: accion.empresaId,
+        ...accion.datos,
+      };
+      const cuentas = nueva.predeterminada
+        ? conPredeterminada([...estado.cuentas, nueva], nueva.id, nueva.empresaId)
+        : [...estado.cuentas, nueva];
+      return { ...estado, cuentas, nextCuentaId: estado.nextCuentaId + 1 };
+    }
+
+    case "editarCuenta": {
+      const previa = cuentaDe(estado, accion.id);
+      if (!previa) return estado;
+      // La moneda es inmutable con movimientos: cambiaría el valor de filas ya
+      // registradas en su moneda nativa.
+      const enUso = estado.transacciones.some((t) => t.cuentaId === accion.id);
+      const moneda = enUso ? previa.moneda : accion.datos.moneda;
+      // La única predeterminada no puede dejar de serlo ni desactivarse aquí:
+      // se reasigna marcando otra cuenta como predeterminada.
+      const datos =
+        previa.predeterminada && (!accion.datos.predeterminada || !accion.datos.activa)
+          ? { ...accion.datos, predeterminada: true, activa: true }
+          : accion.datos;
+      let cuentas = estado.cuentas.map((c) =>
+        c.id === accion.id ? { ...c, ...datos, moneda } : c
+      );
+      if (datos.predeterminada && !previa.predeterminada)
+        cuentas = conPredeterminada(cuentas, accion.id, previa.empresaId);
+      return { ...estado, cuentas };
+    }
+
+    case "eliminarCuenta": {
+      const cuenta = cuentaDe(estado, accion.id);
+      // Defensa además del disable en la UI.
+      if (
+        !cuenta ||
+        !puedeEliminarCuenta(cuenta, estado.transacciones, estado.traspasos, estado.movimientosGrupo)
+          .ok
+      )
+        return estado;
+      return { ...estado, cuentas: estado.cuentas.filter((c) => c.id !== accion.id) };
+    }
+
+    case "crearTransaccion": {
+      const cuenta = cuentaDe(estado, accion.datos.cuentaId);
+      if (!cuenta) return estado;
       return {
         ...estado,
         transacciones: [
@@ -190,21 +306,29 @@ function reducer(estado: EstadoFinanzas, accion: AccionFinanzas): EstadoFinanzas
           {
             id: estado.nextTransaccionId,
             ...accion.datos,
+            moneda: cuenta.moneda,
             tasaBs: tasaDe(estado),
             origen: "manual",
           },
         ],
         nextTransaccionId: estado.nextTransaccionId + 1,
       };
+    }
 
-    case "editarTransaccion":
+    case "editarTransaccion": {
+      const cuenta = cuentaDe(estado, accion.datos.cuentaId);
+      if (!cuenta) return estado;
       return {
         ...estado,
         transacciones: estado.transacciones.map((t) =>
-          // Solo manuales; conserva tasaBs/origen/referenciaId (snapshot histórico).
-          t.id === accion.id && t.origen === "manual" ? { ...t, ...accion.datos } : t
+          // Solo manuales; conserva tasaBs/origen/referenciaId (snapshot
+          // histórico). La moneda se re-deriva por si cambió la cuenta.
+          t.id === accion.id && t.origen === "manual"
+            ? { ...t, ...accion.datos, moneda: cuenta.moneda }
+            : t
         ),
       };
+    }
 
     case "eliminarTransaccion":
       return {
@@ -214,20 +338,92 @@ function reducer(estado: EstadoFinanzas, accion: AccionFinanzas): EstadoFinanzas
         ),
       };
 
+    case "registrarTraspaso": {
+      const d = accion.datos;
+      const origen = cuentaDe(estado, d.cuentaOrigenId);
+      const destino = cuentaDe(estado, d.cuentaDestinoId);
+      if (!origen || !destino) return estado;
+      const traspaso: TraspasoInterno = {
+        id: estado.nextTraspasoId,
+        ...d,
+        monedaOrigen: origen.moneda,
+        monedaDestino: destino.moneda,
+        tasaBs: tasaDe(estado),
+      };
+      const espejos = espejosDeTraspaso(traspaso, estado.categorias).map((t, i) => ({
+        ...t,
+        id: estado.nextTransaccionId + i,
+      }));
+      return {
+        ...estado,
+        traspasos: [traspaso, ...estado.traspasos],
+        nextTraspasoId: estado.nextTraspasoId + 1,
+        transacciones: [...estado.transacciones, ...espejos],
+        nextTransaccionId: estado.nextTransaccionId + espejos.length,
+      };
+    }
+
+    case "editarTraspaso": {
+      const previo = estado.traspasos.find((t) => t.id === accion.id);
+      const origen = cuentaDe(estado, accion.datos.cuentaOrigenId);
+      const destino = cuentaDe(estado, accion.datos.cuentaDestinoId);
+      if (!previo || !origen || !destino) return estado;
+      // La tasa snapshot se conserva (histórico fiel); las monedas se
+      // re-derivan por si cambiaron las cuentas.
+      const actualizado: TraspasoInterno = {
+        ...previo,
+        ...accion.datos,
+        monedaOrigen: origen.moneda,
+        monedaDestino: destino.moneda,
+      };
+      // Regenera las dos piernas espejo para que los saldos queden consistentes.
+      const sinEspejos = estado.transacciones.filter(
+        (t) => !(t.origen === "traspaso" && t.referenciaId === accion.id)
+      );
+      const nuevosEspejos = espejosDeTraspaso(actualizado, estado.categorias).map((t, i) => ({
+        ...t,
+        id: estado.nextTransaccionId + i,
+      }));
+      return {
+        ...estado,
+        traspasos: estado.traspasos.map((t) => (t.id === accion.id ? actualizado : t)),
+        transacciones: [...sinEspejos, ...nuevosEspejos],
+        nextTransaccionId: estado.nextTransaccionId + nuevosEspejos.length,
+      };
+    }
+
+    case "eliminarTraspaso":
+      return {
+        ...estado,
+        traspasos: estado.traspasos.filter((t) => t.id !== accion.id),
+        // Arrastra las dos piernas espejo.
+        transacciones: estado.transacciones.filter(
+          (t) => !(t.origen === "traspaso" && t.referenciaId === accion.id)
+        ),
+      };
+
     case "registrarTransferenciaGrupo": {
       const d = accion.datos;
+      const origen = cuentaDe(estado, d.cuentaOrigenId);
+      const destino = cuentaDe(estado, d.cuentaDestinoId);
+      if (!origen || !destino) return estado;
       const mov: MovimientoGrupo = {
         id: estado.nextMovimientoId,
         fecha: d.fecha,
         tipo: "Transferencia",
         origenKey: d.origenKey,
         destinoKey: d.destinoKey,
+        cuentaOrigenId: d.cuentaOrigenId,
+        cuentaDestinoId: d.cuentaDestinoId,
         origenNombre: nombreEmpresa(d.origenKey),
         destinoNombre: nombreEmpresa(d.destinoKey),
-        moneda: d.moneda,
-        monto: d.monto,
+        monedaOrigen: origen.moneda,
+        montoOrigen: d.montoOrigen,
+        monedaDestino: destino.moneda,
+        montoDestino: d.montoDestino,
         tasaBs: tasaDe(estado),
         descripcion: d.descripcion,
+        observaciones: d.observaciones,
         usuario: USUARIO_ACTUAL.nombre,
       };
       // Espejo automático en cada extremo con finanzas habilitadas (hoy: LOTER).
@@ -244,6 +440,57 @@ function reducer(estado: EstadoFinanzas, accion: AccionFinanzas): EstadoFinanzas
       };
     }
 
+    case "editarMovimientoGrupo": {
+      const previo = estado.movimientosGrupo.find((m) => m.id === accion.id);
+      if (!previo) return estado;
+      // La tasa snapshot y el usuario originales se conservan (histórico fiel).
+      const actualizado: MovimientoGrupo = { ...previo, ...accion.datos };
+      // Invariante fila-cuenta-moneda: los extremos con cuenta usan la moneda
+      // de esa cuenta, elija lo que elija el modal.
+      const cuentaOrigen =
+        actualizado.cuentaOrigenId !== undefined
+          ? cuentaDe(estado, actualizado.cuentaOrigenId)
+          : undefined;
+      const cuentaDestino =
+        actualizado.cuentaDestinoId !== undefined
+          ? cuentaDe(estado, actualizado.cuentaDestinoId)
+          : undefined;
+      if (cuentaOrigen) actualizado.monedaOrigen = cuentaOrigen.moneda;
+      if (cuentaDestino) actualizado.monedaDestino = cuentaDestino.moneda;
+      // Se regeneran los espejos de la transferencia: quitar los previos (por
+      // referenciaId) y recrearlos si sigue siendo transferencia, para que los
+      // saldos de las empresas queden consistentes.
+      const sinEspejos = estado.transacciones.filter(
+        (t) => !(t.origen === "transferencia" && t.referenciaId === accion.id)
+      );
+      const nuevosEspejos =
+        actualizado.tipo === "Transferencia"
+          ? espejosDeTransferencia(actualizado, estado.categorias).map((t, i) => ({
+              ...t,
+              id: estado.nextTransaccionId + i,
+            }))
+          : [];
+      return {
+        ...estado,
+        movimientosGrupo: estado.movimientosGrupo.map((m) =>
+          m.id === accion.id ? actualizado : m
+        ),
+        transacciones: [...sinEspejos, ...nuevosEspejos],
+        nextTransaccionId: estado.nextTransaccionId + nuevosEspejos.length,
+      };
+    }
+
+    case "eliminarMovimientoGrupo":
+      return {
+        ...estado,
+        movimientosGrupo: estado.movimientosGrupo.filter((m) => m.id !== accion.id),
+        // Arrastra los espejos de la transferencia (si los tenía) para no dejar
+        // salidas/entradas huérfanas que descuadren los saldos.
+        transacciones: estado.transacciones.filter(
+          (t) => !(t.origen === "transferencia" && t.referenciaId === accion.id)
+        ),
+      };
+
     case "registrarPagoNomina": {
       // Idempotencia: un pago genera una sola salida (doble clic / StrictMode).
       const yaExiste = estado.transacciones.some(
@@ -257,6 +504,7 @@ function reducer(estado: EstadoFinanzas, accion: AccionFinanzas): EstadoFinanzas
         accion.pago,
         estado.categorias,
         accion.empresaId,
+        cuentaDe(estado, accion.cuentaId) ?? cuentaPredeterminada(estado.cuentas, accion.empresaId),
         tasaDe(estado)
       );
       if (!nueva) return estado; // empresa sin finanzas habilitadas
@@ -275,7 +523,12 @@ function reducer(estado: EstadoFinanzas, accion: AccionFinanzas): EstadoFinanzas
           t.referenciaId === accion.datos.id
       );
       if (yaExiste) return estado;
-      const nueva = transaccionDeFactura(accion.datos, estado.categorias, accion.empresaId);
+      const nueva = transaccionDeFactura(
+        accion.datos,
+        estado.categorias,
+        accion.empresaId,
+        cuentaDe(estado, accion.cuentaId) ?? cuentaPredeterminada(estado.cuentas, accion.empresaId)
+      );
       if (!nueva) return estado;
       return {
         ...estado,
@@ -292,7 +545,12 @@ function reducer(estado: EstadoFinanzas, accion: AccionFinanzas): EstadoFinanzas
           t.referenciaId === accion.datos.id
       );
       if (yaExiste) return estado;
-      const nueva = transaccionDeCompra(accion.datos, accion.empresaId, tasaDe(estado));
+      const nueva = transaccionDeCompra(
+        accion.datos,
+        accion.empresaId,
+        cuentaDe(estado, accion.cuentaId) ?? cuentaPredeterminada(estado.cuentas, accion.empresaId),
+        tasaDe(estado)
+      );
       if (!nueva) return estado;
       return {
         ...estado,
@@ -300,6 +558,20 @@ function reducer(estado: EstadoFinanzas, accion: AccionFinanzas): EstadoFinanzas
         nextTransaccionId: estado.nextTransaccionId + 1,
       };
     }
+
+    // Reversa del pago automático al eliminar la factura recibida que lo originó.
+    case "eliminarPagoCompra":
+      return {
+        ...estado,
+        transacciones: estado.transacciones.filter(
+          (t) =>
+            !(
+              t.empresaId === accion.empresaId &&
+              t.origen === "compra" &&
+              t.referenciaId === accion.facturaRecibidaId
+            )
+        ),
+      };
   }
 }
 
@@ -315,22 +587,36 @@ interface FinanzasContexto {
   /** Re-consulta la tasa BCV a pedido del usuario (pisa la tasa manual). */
   refrescarTasaBcv: () => void;
   categorias: CategoriaFinanciera[];
+  cuentas: CuentaFinanciera[];
   transacciones: TransaccionFinanciera[];
+  traspasos: TraspasoInterno[];
   movimientosGrupo: MovimientoGrupo[];
   /** Id que recibirá la próxima categoría (para seleccionarla al crearla al vuelo). */
   nextCategoriaId: number;
   categoriasDe: (empresaId: string) => CategoriaFinanciera[];
+  cuentasDe: (empresaId: string) => CuentaFinanciera[];
+  cuentaPredeterminadaDe: (empresaId: string) => CuentaFinanciera | undefined;
   transaccionesDe: (empresaId: string) => TransaccionFinanciera[];
   crearCategoria: (empresaId: string, nombre: string, tipo: TipoCategoria) => void;
   editarCategoria: (id: number, nombre: string, tipo: TipoCategoria) => void;
   eliminarCategoria: (id: number) => void;
+  crearCuenta: (empresaId: string, datos: CuentaDatos) => void;
+  editarCuenta: (id: number, datos: CuentaDatos) => void;
+  eliminarCuenta: (id: number) => void;
   crearTransaccion: (datos: TransaccionDatos) => void;
   editarTransaccion: (id: number, datos: TransaccionDatos) => void;
   eliminarTransaccion: (id: number) => void;
+  registrarTraspaso: (datos: TraspasoDatos) => void;
+  editarTraspaso: (id: number, datos: TraspasoDatos) => void;
+  eliminarTraspaso: (id: number) => void;
   registrarTransferenciaGrupo: (datos: TransferenciaDatos) => void;
-  registrarPagoNomina: (pago: PagoHistorial, empresaId: string) => void;
-  registrarCobroFactura: (datos: CobroFacturaDatos, empresaId: string) => void;
-  registrarPagoCompra: (datos: PagoCompraDatos, empresaId: string) => void;
+  editarMovimientoGrupo: (id: number, datos: MovimientoGrupoDatos) => void;
+  eliminarMovimientoGrupo: (id: number) => void;
+  registrarPagoNomina: (pago: PagoHistorial, empresaId: string, cuentaId: number) => void;
+  registrarCobroFactura: (datos: CobroFacturaDatos, empresaId: string, cuentaId: number) => void;
+  registrarPagoCompra: (datos: PagoCompraDatos, empresaId: string, cuentaId: number) => void;
+  /** Revierte la salida automática de una compra (al eliminar la factura recibida). */
+  eliminarPagoCompra: (facturaRecibidaId: number, empresaId: string) => void;
 }
 
 const Contexto = createContext<FinanzasContexto | null>(null);
@@ -366,10 +652,14 @@ export function FinanzasProvider({ children }: { children: React.ReactNode }) {
       tasaBcv: estado.tasaBcv,
       refrescarTasaBcv: () => consultarTasaBcv(true),
       categorias: estado.categorias,
+      cuentas: estado.cuentas,
       transacciones: estado.transacciones,
+      traspasos: estado.traspasos,
       movimientosGrupo: estado.movimientosGrupo,
       nextCategoriaId: estado.nextCategoriaId,
       categoriasDe: (empresaId) => estado.categorias.filter((c) => c.empresaId === empresaId),
+      cuentasDe: (empresaId) => estado.cuentas.filter((c) => c.empresaId === empresaId),
+      cuentaPredeterminadaDe: (empresaId) => cuentaPredeterminada(estado.cuentas, empresaId),
       transaccionesDe: (empresaId) =>
         estado.transacciones.filter((t) => t.empresaId === empresaId),
       crearCategoria: (empresaId, nombre, tipoCategoria) =>
@@ -377,17 +667,28 @@ export function FinanzasProvider({ children }: { children: React.ReactNode }) {
       editarCategoria: (id, nombre, tipoCategoria) =>
         dispatch({ tipo: "editarCategoria", id, nombre, tipoCategoria }),
       eliminarCategoria: (id) => dispatch({ tipo: "eliminarCategoria", id }),
+      crearCuenta: (empresaId, datos) => dispatch({ tipo: "crearCuenta", empresaId, datos }),
+      editarCuenta: (id, datos) => dispatch({ tipo: "editarCuenta", id, datos }),
+      eliminarCuenta: (id) => dispatch({ tipo: "eliminarCuenta", id }),
       crearTransaccion: (datos) => dispatch({ tipo: "crearTransaccion", datos }),
       editarTransaccion: (id, datos) => dispatch({ tipo: "editarTransaccion", id, datos }),
       eliminarTransaccion: (id) => dispatch({ tipo: "eliminarTransaccion", id }),
+      registrarTraspaso: (datos) => dispatch({ tipo: "registrarTraspaso", datos }),
+      editarTraspaso: (id, datos) => dispatch({ tipo: "editarTraspaso", id, datos }),
+      eliminarTraspaso: (id) => dispatch({ tipo: "eliminarTraspaso", id }),
       registrarTransferenciaGrupo: (datos) =>
         dispatch({ tipo: "registrarTransferenciaGrupo", datos }),
-      registrarPagoNomina: (pago, empresaId) =>
-        dispatch({ tipo: "registrarPagoNomina", pago, empresaId }),
-      registrarCobroFactura: (datos, empresaId) =>
-        dispatch({ tipo: "registrarCobroFactura", datos, empresaId }),
-      registrarPagoCompra: (datos, empresaId) =>
-        dispatch({ tipo: "registrarPagoCompra", datos, empresaId }),
+      editarMovimientoGrupo: (id, datos) =>
+        dispatch({ tipo: "editarMovimientoGrupo", id, datos }),
+      eliminarMovimientoGrupo: (id) => dispatch({ tipo: "eliminarMovimientoGrupo", id }),
+      registrarPagoNomina: (pago, empresaId, cuentaId) =>
+        dispatch({ tipo: "registrarPagoNomina", pago, empresaId, cuentaId }),
+      registrarCobroFactura: (datos, empresaId, cuentaId) =>
+        dispatch({ tipo: "registrarCobroFactura", datos, empresaId, cuentaId }),
+      registrarPagoCompra: (datos, empresaId, cuentaId) =>
+        dispatch({ tipo: "registrarPagoCompra", datos, empresaId, cuentaId }),
+      eliminarPagoCompra: (facturaRecibidaId, empresaId) =>
+        dispatch({ tipo: "eliminarPagoCompra", facturaRecibidaId, empresaId }),
     }),
     [estado, consultarTasaBcv]
   );

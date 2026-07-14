@@ -1,37 +1,40 @@
 "use client";
 
 /**
- * Pestaña Facturas Recibidas: compras a proveedores con PDF asociado,
- * indicador de retención generada (con acceso directo) y pago con salida
- * automática en Finanzas LOTER.
+ * Pestaña Facturas Recibidas: compras a proveedores con PDF asociado e
+ * indicador de retención generada (con acceso directo). Toda factura recibida
+ * NACE PAGADA (compra ya pagada de la empresa) con su salida automática en
+ * Finanzas LOTER; por eso no hay estado pendiente ni acción de pago aquí.
+ * Eliminarla revierte esa salida (mientras no tenga retención generada).
  */
 import { useEffect, useState } from "react";
-import { CheckCheck, Eye, Pencil, Plus, ReceiptText, Trash2 } from "lucide-react";
+import { Eye, Plus, ReceiptText, Trash2 } from "lucide-react";
 import type { FacturaRecibida } from "@/lib/types";
 import { formatFechaVE, formatNumberVE, money } from "@/lib/format";
 import { Modal } from "@/components/ui/Modal";
 import { Toast } from "@/components/ui/Toast";
+import { useFinanzas } from "@/components/finanzas/FinanzasProvider";
 import { useFacturacion } from "../FacturacionProvider";
 import { BadgeEstadoDoc } from "../badges";
 import { VisorPdf } from "../VisorPdf";
 import { FacturaRecibidaModal } from "./FacturaRecibidaModal";
-import { PagoCompraModal } from "./PagoCompraModal";
 import { RetencionEditor } from "./RetencionEditor";
+
+const EMPRESA_ID = "loter";
 
 const selectCls =
   "rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100";
 
 type ModalAbierto =
   | { tipo: "editor"; id: number | null }
-  | { tipo: "pago"; id: number }
   | { tipo: "retencion"; id: number }
   | { tipo: "verPdf"; id: number }
   | null;
 
 export function FacturasRecibidasTab() {
   const fac = useFacturacion();
+  const finanzas = useFinanzas();
   const [filtroProveedor, setFiltroProveedor] = useState<number | "">("");
-  const [filtroEstado, setFiltroEstado] = useState<"todos" | FacturaRecibida["estado"]>("todos");
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
   const [modal, setModal] = useState<ModalAbierto>(null);
@@ -47,17 +50,19 @@ export function FacturasRecibidasTab() {
     .filter(
       (c) =>
         (filtroProveedor === "" || c.proveedorId === filtroProveedor) &&
-        (filtroEstado === "todos" || c.estado === filtroEstado) &&
         (!desde || c.fecha >= desde) &&
         (!hasta || c.fecha <= hasta)
     )
     .sort((a, b) => (a.fecha === b.fecha ? b.id - a.id : a.fecha < b.fecha ? 1 : -1));
 
   const eliminar = (c: FacturaRecibida) => {
-    if (!confirm(`¿Eliminar la factura ${c.numeroFactura}?`)) return;
+    if (c.retencionId) return;
+    if (!confirm(`¿Eliminar la factura ${c.numeroFactura}? Se revertirá su salida en Finanzas.`))
+      return;
     if (c.pdfUrl) URL.revokeObjectURL(c.pdfUrl);
     fac.eliminarFacturaRecibida(c.id);
-    setToast("Factura recibida eliminada");
+    finanzas.eliminarPagoCompra(c.id, EMPRESA_ID);
+    setToast("Factura recibida eliminada · salida de Finanzas revertida");
   };
 
   const compraDe = (id: number) => fac.facturasRecibidas.find((c) => c.id === id);
@@ -69,7 +74,7 @@ export function FacturasRecibidasTab() {
           <div>
             <h2 className="font-display text-base font-700 text-navy-950">Facturas recibidas</h2>
             <p className="text-xs text-slate-400">
-              Compras a proveedores (Bs) · pagada ⇒ salida automática en Finanzas LOTER
+              Compras a proveedores ya pagadas (Bs) · salida automática en Finanzas LOTER
             </p>
           </div>
           <button
@@ -88,14 +93,6 @@ export function FacturasRecibidasTab() {
               {fac.proveedores.map((p) => (
                 <option key={p.id} value={p.id}>{p.razonSocial}</option>
               ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] font-600 uppercase tracking-wide text-slate-400">Estado</label>
-            <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value as typeof filtroEstado)} className={selectCls}>
-              <option value="todos">Todas</option>
-              <option value="pendiente">Pendientes</option>
-              <option value="pagada">Pagadas</option>
             </select>
           </div>
           <div>
@@ -135,7 +132,8 @@ export function FacturasRecibidasTab() {
                   const ret = c.retencionId
                     ? fac.retenciones.find((r) => r.id === c.retencionId)
                     : undefined;
-                  const congelada = c.estado !== "pendiente" || !!c.retencionId;
+                  // Con retención generada queda congelada (no se puede eliminar).
+                  const congelada = !!c.retencionId;
                   return (
                     <tr key={c.id} className="hover:bg-slate-50/60">
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-500">
@@ -184,30 +182,17 @@ export function FacturasRecibidasTab() {
                             <Eye className="h-4 w-4" />
                           </button>
                           <button
-                            title={congelada ? "Pagada o con retención: no editable" : "Editar"}
-                            disabled={congelada}
-                            onClick={() => setModal({ tipo: "editor", id: c.id })}
-                            className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-navy-700 disabled:opacity-30 disabled:hover:bg-transparent"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            title={congelada ? "Pagada o con retención: no eliminable" : "Eliminar"}
+                            title={
+                              congelada
+                                ? "Con retención generada: no eliminable"
+                                : "Eliminar (revierte la salida en Finanzas)"
+                            }
                             disabled={congelada}
                             onClick={() => eliminar(c)}
                             className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30 disabled:hover:bg-transparent"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
-                          {c.estado === "pendiente" && (
-                            <button
-                              title="Marcar pagada (registra la salida en Finanzas)"
-                              onClick={() => setModal({ tipo: "pago", id: c.id })}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-600 text-white hover:bg-emerald-700"
-                            >
-                              <CheckCheck className="h-3.5 w-3.5" /> Pagada
-                            </button>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -227,13 +212,6 @@ export function FacturasRecibidasTab() {
           onClose={() => setModal(null)}
         />
       )}
-      {modal?.tipo === "pago" &&
-        (() => {
-          const c = compraDe(modal.id);
-          return c ? (
-            <PagoCompraModal compra={c} onToast={setToast} onClose={() => setModal(null)} />
-          ) : null;
-        })()}
       {modal?.tipo === "retencion" &&
         (() => {
           const c = compraDe(modal.id);

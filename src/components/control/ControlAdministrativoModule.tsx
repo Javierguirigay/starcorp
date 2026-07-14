@@ -7,6 +7,7 @@
  */
 import { TabsRuta } from "@/components/layout/TabsRuta";
 import { CarteraTab } from "./CarteraTab";
+import { CuentasPorPagarTab } from "./CuentasPorPagarTab";
 
 const BASE = "/loter/administracion/control-administrativo";
 
@@ -19,7 +20,7 @@ export function ControlAdministrativoModule({ vista }: { vista: "cobrar" | "paga
   return (
     <>
       <TabsRuta tabs={TABS} />
-      <CarteraTab tipo={vista} />
+      {vista === "cobrar" ? <CarteraTab /> : <CuentasPorPagarTab />}
     </>
   );
 }
