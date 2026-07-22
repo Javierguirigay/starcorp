@@ -2,6 +2,7 @@
  * Seeds del sub-módulo Facturación, transcritos de los documentos reales de
  * /docs/referencias (reportes 00384/00388, prefacturas 066/068 y factura
  * fiscal 000116 emitida desde la 066 a tasa 602,33).
+ * Todas de LOTER: cada colección se aísla por empresa (empresaId).
  */
 import type {
   CalibracionPlantilla,
@@ -11,7 +12,7 @@ import type {
   ReporteServicio,
 } from "../types";
 
-export const CLIENTES_SEED: Cliente[] = [
+const CLIENTES_RAW: Omit<Cliente, "empresaId">[] = [
   {
     id: 1,
     razonSocial: "GO WIRELINE SERVICES, C.A",
@@ -28,9 +29,11 @@ export const CLIENTES_SEED: Cliente[] = [
   },
 ];
 
+export const CLIENTES_SEED: Cliente[] = CLIENTES_RAW.map((c) => ({ ...c, empresaId: "loter" }));
+
 export const NEXT_CLIENTE_ID = 3;
 
-export const REPORTES_SEED: ReporteServicio[] = [
+const REPORTES_RAW: Omit<ReporteServicio, "empresaId">[] = [
   {
     id: 1,
     numeroControl: "00384",
@@ -76,10 +79,12 @@ export const REPORTES_SEED: ReporteServicio[] = [
   },
 ];
 
+export const REPORTES_SEED: ReporteServicio[] = REPORTES_RAW.map((r) => ({ ...r, empresaId: "loter" }));
+
 export const NEXT_REPORTE_ID = 3;
 
 /* Prefactura 066: verificación 1×$250 + 2×$260 = $770,00; IVA $123,20; total $893,20. */
-export const PREFACTURAS_SEED: PreFactura[] = [
+const PREFACTURAS_RAW: Omit<PreFactura, "empresaId">[] = [
   {
     id: 1,
     numero: "066",
@@ -125,12 +130,14 @@ export const PREFACTURAS_SEED: PreFactura[] = [
   },
 ];
 
+export const PREFACTURAS_SEED: PreFactura[] = PREFACTURAS_RAW.map((p) => ({ ...p, empresaId: "loter" }));
+
 export const NEXT_PREFACTURA_ID = 3;
 
 /* Factura 000116 (desde la 066 a tasa 602,33, conversión por unitario):
    $250 → Bs 150.582,50; $260 → Bs 156.605,80;
    subtotal Bs 463.794,10; IVA Bs 74.207,06; total Bs 538.001,16. */
-export const FACTURAS_SEED: Factura[] = [
+const FACTURAS_RAW: Omit<Factura, "empresaId">[] = [
   {
     id: 1,
     prefacturaId: 1,
@@ -159,6 +166,8 @@ export const FACTURAS_SEED: Factura[] = [
     estado: "pendiente",
   },
 ];
+
+export const FACTURAS_SEED: Factura[] = FACTURAS_RAW.map((f) => ({ ...f, empresaId: "loter" }));
 
 export const NEXT_FACTURA_ID = 2;
 

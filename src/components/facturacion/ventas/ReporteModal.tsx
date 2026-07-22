@@ -6,7 +6,7 @@
  * transcribe a mano con el visor al lado (dos columnas en desktop).
  */
 import { useRef, useState } from "react";
-import { Plus, Trash2, UploadCloud } from "lucide-react";
+import { List, Plus, Trash2, UploadCloud } from "lucide-react";
 import type { ReporteServicio } from "@/lib/types";
 import { fmtISO } from "@/lib/format";
 import { diasDePeriodo } from "@/lib/negocio/facturacion";
@@ -26,6 +26,8 @@ interface PeriodoForm {
   diasTexto: string;
   /** USD referencial del servicio elegido del catálogo (undefined = texto libre). */
   tarifaRef?: number;
+  /** Solo UI: la fila escribe el concepto a mano en vez de elegirlo del catálogo. */
+  libre?: boolean;
 }
 
 export function ReporteModal({
@@ -38,6 +40,8 @@ export function ReporteModal({
   onClose: () => void;
 }) {
   const fac = useFacturacion();
+  // Catálogo de servicios (Gestión de Tarifas) que alimenta el selector.
+  const tarifasActivas = fac.tarifas.filter((t) => t.activo);
 
   const [numeroControl, setNumeroControl] = useState(reporte?.numeroControl ?? "");
   const [fecha, setFecha] = useState(reporte?.fecha ?? fmtISO(new Date()));
@@ -57,6 +61,9 @@ export function ReporteModal({
       hasta: p.hasta,
       diasTexto: String(p.dias),
       tarifaRef: p.tarifaRef,
+      // Conceptos históricos que ya no están en el catálogo (servicio dado de
+      // baja o renombrado) se editan como texto libre para no perderlos.
+      libre: !tarifasActivas.some((t) => t.descripcion === p.concepto),
     })) ?? [{ key: 1, concepto: "", desde: "", hasta: "", diasTexto: "" }]
   );
   const [nextKey, setNextKey] = useState((reporte?.periodos.length ?? 1) + 1);
@@ -73,9 +80,6 @@ export function ReporteModal({
     setPdfUrl(url);
     setPdfNombre(f.name);
   };
-
-  // Catálogo de servicios (Gestión de Tarifas) para el selector con filtro.
-  const tarifasActivas = fac.tarifas.filter((t) => t.activo);
 
   // Al escribir/elegir el concepto: si coincide exacto con un servicio del
   // catálogo, captura su tarifa referencial; si es texto libre, la limpia.
@@ -265,45 +269,73 @@ export function ReporteModal({
                   <Plus className="h-3.5 w-3.5" /> Añadir período
                 </button>
               </div>
-              <datalist id="tarifas-catalogo">
-                {tarifasActivas.map((t) => (
-                  <option key={t.id} value={t.descripcion} />
-                ))}
-              </datalist>
               <div className="space-y-2">
                 {periodos.map((p) => (
-                  <div key={p.key} className="flex items-end gap-2 rounded-xl border border-slate-200 p-2">
-                    <div className="min-w-0 flex-1">
+                  <div key={p.key} className="space-y-2 rounded-xl border border-slate-200 p-2">
+                    <div>
                       <label className="mb-0.5 block text-[10px] font-600 uppercase text-slate-400">Equipo / concepto</label>
-                      <input
-                        type="text"
-                        list="tarifas-catalogo"
-                        value={p.concepto}
-                        onChange={(e) => alCambiarConcepto(p.key, e.target.value)}
-                        placeholder="Elige un servicio o escribe uno…"
-                        className={inputCls}
-                      />
+                      {p.libre ? (
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={p.concepto}
+                            onChange={(e) => alCambiarConcepto(p.key, e.target.value)}
+                            placeholder="Escribe el servicio"
+                            className={inputCls}
+                          />
+                          <button
+                            type="button"
+                            title="Elegir del catálogo"
+                            onClick={() =>
+                              editarPeriodo(p.key, { libre: false, concepto: "", tarifaRef: undefined })
+                            }
+                            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-slate-300 text-slate-400 hover:bg-slate-50 hover:text-navy-700"
+                          >
+                            <List className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <select
+                          value={p.concepto}
+                          onChange={(e) => {
+                            if (e.target.value === "__otra__")
+                              editarPeriodo(p.key, { libre: true, concepto: "", tarifaRef: undefined });
+                            else alCambiarConcepto(p.key, e.target.value);
+                          }}
+                          className={inputCls}
+                        >
+                          <option value="">Selecciona un servicio…</option>
+                          {tarifasActivas.map((t) => (
+                            <option key={t.id} value={t.descripcion}>
+                              {t.descripcion}
+                            </option>
+                          ))}
+                          <option value="__otra__">Otro…</option>
+                        </select>
+                      )}
                     </div>
-                    <div>
-                      <label className="mb-0.5 block text-[10px] font-600 uppercase text-slate-400">Desde</label>
-                      <input type="date" value={p.desde} onChange={(e) => editarPeriodo(p.key, { desde: e.target.value })} className={inputCls} />
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <label className="mb-0.5 block text-[10px] font-600 uppercase text-slate-400">Desde</label>
+                        <input type="date" value={p.desde} onChange={(e) => editarPeriodo(p.key, { desde: e.target.value })} className={inputCls} />
+                      </div>
+                      <div className="flex-1">
+                        <label className="mb-0.5 block text-[10px] font-600 uppercase text-slate-400">Hasta</label>
+                        <input type="date" value={p.hasta} onChange={(e) => editarPeriodo(p.key, { hasta: e.target.value })} className={inputCls} />
+                      </div>
+                      <div className="w-16">
+                        <label className="mb-0.5 block text-[10px] font-600 uppercase text-slate-400">Días</label>
+                        <input type="number" min={0} value={p.diasTexto} onChange={(e) => editarPeriodo(p.key, { diasTexto: e.target.value })} className={`${inputCls} text-right font-mono`} />
+                      </div>
+                      <button
+                        title="Quitar período"
+                        onClick={() => setPeriodos((prev) => prev.filter((x) => x.key !== p.key))}
+                        disabled={periodos.length === 1}
+                        className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
-                    <div>
-                      <label className="mb-0.5 block text-[10px] font-600 uppercase text-slate-400">Hasta</label>
-                      <input type="date" value={p.hasta} onChange={(e) => editarPeriodo(p.key, { hasta: e.target.value })} className={inputCls} />
-                    </div>
-                    <div className="w-16">
-                      <label className="mb-0.5 block text-[10px] font-600 uppercase text-slate-400">Días</label>
-                      <input type="number" min={0} value={p.diasTexto} onChange={(e) => editarPeriodo(p.key, { diasTexto: e.target.value })} className={`${inputCls} text-right font-mono`} />
-                    </div>
-                    <button
-                      title="Quitar período"
-                      onClick={() => setPeriodos((prev) => prev.filter((x) => x.key !== p.key))}
-                      disabled={periodos.length === 1}
-                      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
                   </div>
                 ))}
               </div>

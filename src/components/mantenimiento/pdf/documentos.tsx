@@ -37,6 +37,8 @@ export interface FilaMantenimiento {
   realizado: string;
   estado: string;
   tecnico: string;
+  /** Materiales usados/planificados ya unidos ("2 litro Aceite; 1 unidad Filtro") o "—". */
+  materiales: string;
   observaciones: string;
 }
 
@@ -77,7 +79,8 @@ export function ReporteMantenimientoDoc({
             <Text style={[s.tCelda, { flex: 0.9 }]}>Realizado</Text>
             <Text style={[s.tCelda, { flex: 0.9 }]}>Estado</Text>
             <Text style={[s.tCelda, { flex: 1.1 }]}>Técnico</Text>
-            <Text style={[s.tCelda, { flex: 2.4 }]}>Observaciones</Text>
+            <Text style={[s.tCelda, { flex: 1.6 }]}>Materiales</Text>
+            <Text style={[s.tCelda, { flex: 1.8 }]}>Observaciones</Text>
           </View>
           {filas.map((f, i) => (
             <View key={i} style={s.tFila}>
@@ -87,7 +90,8 @@ export function ReporteMantenimientoDoc({
               <Text style={[s.tCelda, { flex: 0.9 }]}>{f.realizado}</Text>
               <Text style={[s.tCelda, { flex: 0.9 }]}>{f.estado}</Text>
               <Text style={[s.tCelda, { flex: 1.1 }]}>{f.tecnico}</Text>
-              <Text style={[s.tCelda, { flex: 2.4 }]}>{f.observaciones}</Text>
+              <Text style={[s.tCelda, { flex: 1.6 }]}>{f.materiales}</Text>
+              <Text style={[s.tCelda, { flex: 1.8 }]}>{f.observaciones}</Text>
             </View>
           ))}
           <View style={[s.tFilaUlt, s.total]}>

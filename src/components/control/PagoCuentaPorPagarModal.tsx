@@ -23,8 +23,6 @@ import { SelectorCuenta } from "@/components/finanzas/SelectorCuenta";
 import { useFacturacion } from "@/components/facturacion/FacturacionProvider";
 import { VisorPdf } from "@/components/facturacion/VisorPdf";
 
-const EMPRESA_ID = "loter";
-
 const inputCls =
   "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100";
 
@@ -42,11 +40,13 @@ export function PagoCuentaPorPagarModal({
 }) {
   const fac = useFacturacion();
   const finanzas = useFinanzas();
+  // Empresa activa: sus categorías/cuentas de Finanzas reciben la salida.
+  const empresaId = fac.empresa.key;
   const proveedor = fac.proveedorPorId(cuenta.proveedorId);
 
   const opcionesCategoria = categoriasParaTipo(
-    finanzas.categoriasDe(EMPRESA_ID),
-    EMPRESA_ID,
+    finanzas.categoriasDe(empresaId),
+    empresaId,
     "salida"
   );
   const gastosOperativos = opcionesCategoria.find((c) => c.nombre === "Gastos Operativos");
@@ -55,7 +55,7 @@ export function PagoCuentaPorPagarModal({
   );
   // Cuenta de Finanzas desde donde sale el pago (predeterminada de LOTER).
   const [cuentaId, setCuentaId] = useState<number | "">(
-    () => finanzas.cuentaPredeterminadaDe(EMPRESA_ID)?.id ?? ""
+    () => finanzas.cuentaPredeterminadaDe(empresaId)?.id ?? ""
   );
 
   const [numeroFactura, setNumeroFactura] = useState(
@@ -79,7 +79,7 @@ export function PagoCuentaPorPagarModal({
   const cuentaPago =
     cuentaId === ""
       ? undefined
-      : finanzas.cuentasDe(EMPRESA_ID).find((c) => c.id === cuentaId);
+      : finanzas.cuentasDe(empresaId).find((c) => c.id === cuentaId);
 
   const alCambiarBase = (texto: string) => {
     setBaseTexto(texto);
@@ -167,19 +167,26 @@ export function PagoCuentaPorPagarModal({
         fecha: fmtISO(new Date()),
         categoriaId: categoriaId as number,
       },
-      EMPRESA_ID,
+      empresaId,
       cuentaId as number
     );
     if (conRetencion && onPagada) {
       // La factura recibida ya existe en el store; encadenamos su retención.
-      const nuevaFactura: FacturaRecibida = { id: nuevaId, ...datos, estado: "pagada" };
+      const nuevaFactura: FacturaRecibida = {
+        id: nuevaId,
+        empresaId: cuenta.empresaId,
+        ...datos,
+        estado: "pagada",
+      };
       creados.current
         .filter((u) => u !== pdfUrl)
         .forEach((u) => URL.revokeObjectURL(u));
       onPagada(nuevaFactura);
       return;
     }
-    onToast("Pago registrado · convertida en factura recibida (salida en Finanzas LOTER)");
+    onToast(
+      `Pago registrado · convertida en factura recibida (salida en Finanzas ${fac.empresa.nombre})`
+    );
     cerrar(pdfUrl);
   };
 
@@ -329,7 +336,7 @@ export function PagoCuentaPorPagarModal({
             <label className="mb-1 mt-3 block text-sm font-600 text-navy-900">
               Cuenta desde donde se paga
             </label>
-            <SelectorCuenta empresaId={EMPRESA_ID} value={cuentaId} onChange={setCuentaId} />
+            <SelectorCuenta empresaId={empresaId} value={cuentaId} onChange={setCuentaId} />
             <p className="mt-2 text-xs text-emerald-800/80">
               {finanzas.tasa > 0
                 ? cuentaPago && cuentaPago.moneda !== "VES"

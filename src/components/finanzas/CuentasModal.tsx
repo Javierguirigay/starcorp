@@ -20,8 +20,11 @@ import { Modal } from "@/components/ui/Modal";
 import { useFinanzas } from "./FinanzasProvider";
 import { BadgeMoneda } from "./badges";
 
-const inputCls =
-  "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100";
+// El ancho va aparte: al concatenar (`${inputCls} w-28`) ganaba el `w-full` de
+// la base, porque Tailwind emite `w-full` después de la escala numérica.
+const campoBase =
+  "rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100";
+const inputCls = `w-full ${campoBase}`;
 
 export function CuentasModal({
   empresa,
@@ -151,7 +154,7 @@ export function CuentasModal({
                     title={
                       enUso > 0 ? "Con movimientos asociados la moneda no se cambia" : undefined
                     }
-                    className={`${inputCls} w-28 disabled:bg-slate-50 disabled:text-slate-400`}
+                    className={`${campoBase} w-28 shrink-0 disabled:bg-slate-50 disabled:text-slate-400`}
                   >
                     {MONEDAS.map((m) => (
                       <option key={m} value={m}>
@@ -261,7 +264,7 @@ export function CuentasModal({
           <select
             value={nuevaMoneda}
             onChange={(e) => setNuevaMoneda(e.target.value as Moneda)}
-            className={`${inputCls} w-28`}
+            className={`${campoBase} w-28 shrink-0`}
           >
             {MONEDAS.map((m) => (
               <option key={m} value={m}>

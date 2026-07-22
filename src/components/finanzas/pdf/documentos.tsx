@@ -8,16 +8,20 @@
  */
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import { money } from "@/lib/format";
-
-const NAVY = "#0F2742";
-const GOLD = "#D08F00";
-const SLATE = "#64748B";
-const BORDE = "#CBD5E1";
+import type { Empresa } from "@/lib/types";
+import {
+  MembreteEmpresa,
+  MembreteGrupo,
+  membreteDeEmpresa,
+  NAVY,
+  GOLD,
+  SLATE,
+  BORDE,
+} from "@/components/pdf/Membrete";
 
 const s = StyleSheet.create({
   page: { padding: 40, fontFamily: "Helvetica", fontSize: 9, color: NAVY },
-  empresa: { fontFamily: "Helvetica-Bold", fontSize: 11 },
-  titulo: { fontFamily: "Helvetica-Bold", fontSize: 14, marginTop: 2 },
+  titulo: { fontFamily: "Helvetica-Bold", fontSize: 14, marginTop: 10 },
   subtitulo: { fontSize: 9, color: SLATE, marginTop: 2 },
   regla: { borderBottomWidth: 1.5, borderBottomColor: GOLD, marginVertical: 10 },
   tabla: { borderWidth: 1, borderColor: BORDE, borderRadius: 2, marginTop: 4 },
@@ -43,8 +47,11 @@ export interface FilaReporte {
   montoBs: number;
 }
 
+/** Línea de empresa para el pie de página ("LOTER, C.A. — RIF J-31717295-7"). */
+const lineaEmpresa = (e: Empresa) => (e.rif ? `${e.nombre} — RIF ${e.rif}` : e.nombre);
+
 export function ReporteFinancieroDoc({
-  empresaLinea,
+  empresa,
   titulo,
   subtitulo,
   generado,
@@ -52,8 +59,8 @@ export function ReporteFinancieroDoc({
   totalUSD,
   totalBs,
 }: {
-  /** "LOTER, C.A. — RIF J-31717295-7" */
-  empresaLinea: string;
+  /** Empresa del reporte: define membrete (logo si existe) y pie de página. */
+  empresa: Empresa;
   /** "Reporte Financiero — Finanzas LOTER" */
   titulo: string;
   /** "Ingresos · Generado el dd-mm-yyyy · Filtros: …" */
@@ -67,7 +74,7 @@ export function ReporteFinancieroDoc({
   return (
     <Document>
       <Page size="A4" style={s.page}>
-        <Text style={s.empresa}>{empresaLinea}</Text>
+        <MembreteEmpresa datos={membreteDeEmpresa(empresa)} />
         <Text style={s.titulo}>{titulo}</Text>
         <Text style={s.subtitulo}>{subtitulo}</Text>
         <View style={s.regla} />
@@ -114,7 +121,7 @@ export function ReporteFinancieroDoc({
           al registrar cada movimiento. Totales solo en equivalentes.
         </Text>
         <Text style={s.pie}>
-          {empresaLinea} · Documento generado el {generado}
+          {lineaEmpresa(empresa)} · Documento generado el {generado}
         </Text>
       </Page>
     </Document>
@@ -133,7 +140,7 @@ export interface FilaMovimiento extends FilaReporte {
  * distinguir cada fila y un pie con tres totales: Ingresos, Egresos y Neto.
  */
 export function ReporteMovimientosDoc({
-  empresaLinea,
+  empresa,
   titulo,
   subtitulo,
   generado,
@@ -145,7 +152,8 @@ export function ReporteMovimientosDoc({
   netoUSD,
   netoBs,
 }: {
-  empresaLinea: string;
+  /** Empresa del reporte: define membrete (logo si existe) y pie de página. */
+  empresa: Empresa;
   titulo: string;
   subtitulo: string;
   generado: string;
@@ -160,7 +168,7 @@ export function ReporteMovimientosDoc({
   return (
     <Document>
       <Page size="A4" style={s.page}>
-        <Text style={s.empresa}>{empresaLinea}</Text>
+        <MembreteEmpresa datos={membreteDeEmpresa(empresa)} />
         <Text style={s.titulo}>{titulo}</Text>
         <Text style={s.subtitulo}>{subtitulo}</Text>
         <View style={s.regla} />
@@ -219,7 +227,7 @@ export function ReporteMovimientosDoc({
           al registrar cada movimiento. Neto = Ingresos − Egresos, solo en equivalentes.
         </Text>
         <Text style={s.pie}>
-          {empresaLinea} · Documento generado el {generado}
+          {lineaEmpresa(empresa)} · Documento generado el {generado}
         </Text>
       </Page>
     </Document>
@@ -255,7 +263,7 @@ export function ReporteGrupoDoc({
   return (
     <Document>
       <Page size="A4" orientation="landscape" style={s.page}>
-        <Text style={s.empresa}>{grupoLinea}</Text>
+        <MembreteGrupo />
         <Text style={s.titulo}>{titulo}</Text>
         <Text style={s.subtitulo}>{subtitulo}</Text>
         <View style={s.regla} />

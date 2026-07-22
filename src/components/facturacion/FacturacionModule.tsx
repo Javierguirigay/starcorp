@@ -7,7 +7,9 @@
  * el redirect de la ruta vieja de Retenciones.
  */
 import { useState } from "react";
+import type { Empresa } from "@/lib/types";
 import { TasaInput } from "@/components/finanzas/TasaInput";
+import { FacturacionEmpresaScope } from "./FacturacionProvider";
 import { ReportesTab } from "./ventas/ReportesTab";
 import { PrefacturasTab } from "./ventas/PrefacturasTab";
 import { FacturasTab } from "./ventas/FacturasTab";
@@ -47,9 +49,11 @@ const tabCls = (activo: boolean) =>
   }`;
 
 export function FacturacionModule({
+  empresa,
   vistaInicial = "facturacion",
   tabInicial,
 }: {
+  empresa: Empresa;
   vistaInicial?: Vista;
   tabInicial?: string;
 }) {
@@ -62,7 +66,7 @@ export function FacturacionModule({
   const tab = tabs[vista];
 
   return (
-    <>
+    <FacturacionEmpresaScope empresa={empresa}>
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="inline-flex self-start rounded-xl border border-slate-200 bg-white p-1">
@@ -106,6 +110,6 @@ export function FacturacionModule({
           {tab === "resumen" && <ResumenTab />}
         </>
       )}
-    </>
+    </FacturacionEmpresaScope>
   );
 }

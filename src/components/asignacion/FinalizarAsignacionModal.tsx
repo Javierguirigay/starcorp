@@ -4,6 +4,8 @@
  * Finaliza una asignación fijando su fecha "hasta" (el día en que el equipo
  * vuelve de locación/base). Por defecto propone hoy; los días se calculan del
  * rango desde→hasta. Al confirmar, el equipo queda libre (estado derivado).
+ * Si la asignación nació de una orden de entrega (salida temporal), pide la
+ * ubicación de retorno y registra el reingreso en el kardex.
  */
 import { useState } from "react";
 import { CheckCircle2 } from "lucide-react";
@@ -12,6 +14,8 @@ import { fmtISO, formatFechaVE } from "@/lib/format";
 import { diasEntre } from "@/lib/negocio/fechas";
 import { Modal } from "@/components/ui/Modal";
 import { useInventario } from "@/components/inventario/InventarioProvider";
+import { UbicacionSelect } from "@/components/inventario/UbicacionSelect";
+import { useOrdenes } from "@/components/ordenes/OrdenesProvider";
 
 export function FinalizarAsignacionModal({
   asignacion,
@@ -23,17 +27,33 @@ export function FinalizarAsignacionModal({
   onClose: () => void;
 }) {
   const inv = useInventario();
+  const ord = useOrdenes();
   // Propone la fecha "hasta" ya capturada al crear, o el día de hoy.
   const [hasta, setHasta] = useState(asignacion.hasta || fmtISO(new Date()));
+  const [ubicacion, setUbicacion] = useState("");
 
   const dias = diasEntre(asignacion.desde, hasta);
+  // Salida temporal por orden de entrega: el retorno reingresa el equipo.
+  const deOrden = asignacion.ordenId !== undefined;
 
   const confirmar = () => {
     if (!hasta) return onToast("Indica la fecha de finalización");
     if (dias === "")
       return onToast("La fecha de finalización no puede ser anterior al inicio");
-    inv.finalizarAsignacion(asignacion.id, hasta, dias);
-    onToast(`Asignación ${asignacion.id} finalizada`);
+    if (deOrden) {
+      if (!ubicacion.trim()) return onToast("Indica a qué ubicación regresa el equipo");
+      const numero = ord.ordenes.find((o) => o.id === asignacion.ordenId)?.numero;
+      inv.registrarRetorno(asignacion.id, {
+        hasta,
+        dias,
+        ubicacion: ubicacion.trim(),
+        ...(numero ? { referencia: numero } : {}),
+      });
+      onToast(`Retorno registrado: ${asignacion.equipos.join(", ")} → ${ubicacion.trim()}`);
+    } else {
+      inv.finalizarAsignacion(asignacion.id, hasta, dias);
+      onToast(`Asignación ${asignacion.id} finalizada`);
+    }
     onClose();
   };
 
@@ -83,6 +103,15 @@ export function FinalizarAsignacionModal({
             </span>
           </p>
         </div>
+        {deOrden && (
+          <div>
+            <label className="mb-1.5 block text-sm font-600 text-navy-900">Regresa a</label>
+            <UbicacionSelect value={ubicacion} onChange={setUbicacion} />
+            <p className="mt-1.5 text-xs text-slate-500">
+              El reingreso queda registrado en el kardex de movimientos.
+            </p>
+          </div>
+        )}
       </div>
     </Modal>
   );

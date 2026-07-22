@@ -72,10 +72,10 @@ export function CarteraTab() {
         fecha: fmtISO(new Date()),
         clienteNombre: fac.clientePorId(f.clienteId)?.razonSocial ?? "—",
       },
-      "loter",
+      fac.empresa.key,
       cuentaId
     );
-    setToast("Cobro registrado en Finanzas LOTER");
+    setToast(`Cobro registrado en Finanzas · ${fac.empresa.nombre}`);
   };
 
   return (
@@ -199,7 +199,7 @@ export function CarteraTab() {
 
       {cobrando && (
         <CobroFacturaModal
-          empresaId="loter"
+          empresaId={fac.empresa.key}
           numeroFactura={cobrando.documento}
           clienteNombre={cobrando.contraparte}
           totalBs={cobrando.totalBs}

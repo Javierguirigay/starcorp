@@ -6,12 +6,19 @@
  * edición) ajusta las cantidades.
  */
 import { useEffect, useState } from "react";
-import { PackagePlus, Pencil, Trash2 } from "lucide-react";
+import { ArrowDownToLine, PackagePlus, Pencil, Trash2 } from "lucide-react";
 import type { Consumible } from "@/lib/types";
-import { estadoStock, ETIQUETA_STOCK, type EstadoStock } from "@/lib/negocio/inventario";
+import {
+  estadoStock,
+  filtrarConsumibles,
+  ETIQUETA_STOCK,
+  type EstadoStock,
+} from "@/lib/negocio/inventario";
 import { Toast } from "@/components/ui/Toast";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { useInventario } from "./InventarioProvider";
 import { ConsumibleModal } from "./ConsumibleModal";
+import { EntradaStockModal } from "./EntradaStockModal";
 
 const BADGE_STOCK: Record<EstadoStock, string> = {
   ok: "bg-emerald-50 text-emerald-700",
@@ -22,6 +29,8 @@ const BADGE_STOCK: Record<EstadoStock, string> = {
 export function ConsumiblesTab() {
   const inv = useInventario();
   const [modal, setModal] = useState<{ id: number | null } | null>(null);
+  const [entrada, setEntrada] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,7 +39,8 @@ export function ConsumiblesTab() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const consumibles = [...inv.consumibles].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  const ordenados = [...inv.consumibles].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  const consumibles = filtrarConsumibles(ordenados, busqueda);
 
   const eliminar = (c: Consumible) => {
     if (!confirm(`¿Eliminar el consumible "${c.nombre}"? Se quitará de los equipos que lo usan.`))
@@ -49,12 +59,26 @@ export function ConsumiblesTab() {
               Repuestos y consumibles con control de existencias
             </p>
           </div>
-          <button
-            onClick={() => setModal({ id: null })}
-            className="inline-flex items-center gap-2 rounded-xl bg-navy-900 px-4 py-2 text-sm font-600 text-white hover:bg-navy-800"
-          >
-            <PackagePlus className="h-[18px] w-[18px]" /> Cargar al inventario
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchInput
+              value={busqueda}
+              onChange={setBusqueda}
+              placeholder="Nombre, tipo, ubicación…"
+              className="w-full sm:w-56"
+            />
+            <button
+              onClick={() => setEntrada(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-600 text-navy-700 hover:bg-slate-50"
+            >
+              <ArrowDownToLine className="h-[18px] w-[18px]" /> Registrar entrada
+            </button>
+            <button
+              onClick={() => setModal({ id: null })}
+              className="inline-flex items-center gap-2 rounded-xl bg-navy-900 px-4 py-2 text-sm font-600 text-white hover:bg-navy-800"
+            >
+              <PackagePlus className="h-[18px] w-[18px]" /> Cargar al inventario
+            </button>
+          </div>
         </div>
 
         <div className="table-wrap">
@@ -74,7 +98,9 @@ export function ConsumiblesTab() {
               {consumibles.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">
-                    No hay consumibles cargados.
+                    {ordenados.length === 0
+                      ? "No hay consumibles cargados."
+                      : "Ningún consumible coincide con la búsqueda."}
                   </td>
                 </tr>
               ) : (
@@ -133,6 +159,7 @@ export function ConsumiblesTab() {
           onClose={() => setModal(null)}
         />
       )}
+      {entrada && <EntradaStockModal onToast={setToast} onClose={() => setEntrada(false)} />}
       {toast && <Toast mensaje={toast} />}
     </>
   );

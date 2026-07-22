@@ -43,6 +43,14 @@ export function formatFechaVE(fecha: string): string {
   return m ? `${m[3]}-${m[2]}-${m[1]}` : fecha ?? "";
 }
 
+/**
+ * Comparación laxa de texto para búsquedas: sin acentos ni mayúsculas.
+ * "Válvula" y "valvula" deben encontrarse mutuamente.
+ */
+export function normalizarTexto(s: string): string {
+  return s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
 /** Fecha -> "yyyy-mm-dd" (réplica de fmtISO del boceto). */
 export function fmtISO(d: Date): string {
   return (

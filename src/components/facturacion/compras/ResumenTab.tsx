@@ -60,7 +60,7 @@ export function ResumenTab() {
         import("@/components/pdf/descargar"),
       ]);
       const blob = await generarPdfBlob(
-        <docs.ResumenCreditosDoc periodo={periodo} resumen={resumen} />
+        <docs.ResumenCreditosDoc periodo={periodo} resumen={resumen} empresa={fac.empresa} />
       );
       setPreview({
         url: URL.createObjectURL(blob),

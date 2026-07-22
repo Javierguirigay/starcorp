@@ -26,8 +26,6 @@ import { FacturaRecibidaModal } from "./FacturaRecibidaModal";
 const selectCls =
   "rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100";
 
-const EMPRESA_ID = "loter";
-
 export function LibroComprasTab() {
   const fac = useFacturacion();
   const finanzas = useFinanzas();
@@ -66,7 +64,7 @@ export function LibroComprasTab() {
     )
       return;
     fac.eliminarFacturaRecibida(compraId);
-    finanzas.eliminarPagoCompra(compraId, EMPRESA_ID);
+    finanzas.eliminarPagoCompra(compraId, fac.empresa.key);
     setToast("Compra eliminada · salida de Finanzas revertida");
   };
 
@@ -87,7 +85,7 @@ export function LibroComprasTab() {
         import("@/components/pdf/descargar"),
       ]);
       const blob = await generarPdfBlob(
-        <docs.LibroComprasDoc periodo={periodo} filas={filas} resumen={resumen} />
+        <docs.LibroComprasDoc periodo={periodo} filas={filas} resumen={resumen} empresa={fac.empresa} />
       );
       setPreview({
         url: URL.createObjectURL(blob),

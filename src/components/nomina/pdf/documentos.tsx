@@ -6,18 +6,21 @@
  * Tipografía Helvetica built-in (sin fetch de fuentes externas).
  */
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import type { DetallePago, Empleado, PagoHistorial } from "@/lib/types";
+import type { DetallePago, Empleado, Empresa, PagoHistorial } from "@/lib/types";
 import { formatFechaVE, money } from "@/lib/format";
-
-const NAVY = "#0F2742";
-const GOLD = "#D08F00";
-const SLATE = "#64748B";
-const BORDE = "#CBD5E1";
+import {
+  MembreteEmpresa,
+  membreteDeEmpresa,
+  razonRifDeEmpresa,
+  NAVY,
+  GOLD,
+  SLATE,
+  BORDE,
+} from "@/components/pdf/Membrete";
 
 const s = StyleSheet.create({
   page: { padding: 40, fontFamily: "Helvetica", fontSize: 9, color: NAVY },
-  empresa: { fontFamily: "Helvetica-Bold", fontSize: 11 },
-  titulo: { fontFamily: "Helvetica-Bold", fontSize: 14, marginTop: 2 },
+  titulo: { fontFamily: "Helvetica-Bold", fontSize: 14, marginTop: 10 },
   subtitulo: { fontSize: 9, color: SLATE, marginTop: 2 },
   regla: { borderBottomWidth: 1.5, borderBottomColor: GOLD, marginVertical: 10 },
   seccion: {
@@ -71,10 +74,18 @@ export function datosEmpleado(d: DetallePago, empleados: Empleado[]): EmpInfo {
 
 const o = (v: string | undefined) => v || "—";
 
-function Encabezado({ titulo, pago }: { titulo: string; pago: PagoHistorial }) {
+function Encabezado({
+  titulo,
+  pago,
+  empresa,
+}: {
+  titulo: string;
+  pago: PagoHistorial;
+  empresa: Empresa;
+}) {
   return (
     <>
-      <Text style={s.empresa}>LOTER, C.A. — RIF J-31717295-7</Text>
+      <MembreteEmpresa datos={membreteDeEmpresa(empresa)} />
       <Text style={s.titulo}>{titulo}</Text>
       <Text style={s.subtitulo}>
         Nómina {pago.categoria} · Período {formatFechaVE(pago.desde)} →{" "}
@@ -130,17 +141,19 @@ export function ReciboPage({
   pago,
   tasa,
   info,
+  empresa,
 }: {
   d: DetallePago;
   pago: PagoHistorial;
   tasa: number;
   info: EmpInfo;
+  empresa: Empresa;
 }) {
   const descAdelanto = d.descAdelanto ?? 0;
   const base = info.base ?? d.diario * 30;
   return (
     <Page size="A4" style={s.page}>
-      <Encabezado titulo="Recibo de pago" pago={pago} />
+      <Encabezado titulo="Recibo de pago" pago={pago} empresa={empresa} />
 
       <Text style={s.seccion}>Empleado</Text>
       <FilaDato etiqueta="Nombre" valor={d.nombre} />
@@ -170,7 +183,7 @@ export function ReciboPage({
       </View>
 
       <Text style={s.pie}>
-        LOTER, C.A. — RIF J-31717295-7 · Documento generado el {formatFechaVE(pago.registrado)}
+        {razonRifDeEmpresa(empresa)} · Documento generado el {formatFechaVE(pago.registrado)}
       </Text>
     </Page>
   );
@@ -181,6 +194,7 @@ export function ReciboDoc(props: {
   pago: PagoHistorial;
   tasa: number;
   info: EmpInfo;
+  empresa: Empresa;
 }) {
   return (
     <Document>
@@ -189,12 +203,20 @@ export function ReciboDoc(props: {
   );
 }
 
-export function ConsolidadoDoc({ pago, tasa }: { pago: PagoHistorial; tasa: number }) {
+export function ConsolidadoDoc({
+  pago,
+  tasa,
+  empresa,
+}: {
+  pago: PagoHistorial;
+  tasa: number;
+  empresa: Empresa;
+}) {
   const totalAdelanto = pago.totalAdelanto ?? 0;
   return (
     <Document>
       <Page size="A4" orientation="landscape" style={s.page}>
-        <Encabezado titulo="Reporte consolidado de nómina" pago={pago} />
+        <Encabezado titulo="Reporte consolidado de nómina" pago={pago} empresa={empresa} />
         <View style={s.tabla}>
           <View style={[s.tFila, s.tCab]}>
             <Text style={[s.tCelda, { flex: 2 }]}>Empleado</Text>
@@ -236,7 +258,7 @@ export function ConsolidadoDoc({ pago, tasa }: { pago: PagoHistorial; tasa: numb
           Montos en Bs calculados a la tasa {money(tasa, "Bs")} por USD.
         </Text>
         <Text style={s.pie}>
-          LOTER, C.A. — RIF J-31717295-7 · Documento generado el {formatFechaVE(pago.registrado)}
+          {razonRifDeEmpresa(empresa)} · Documento generado el {formatFechaVE(pago.registrado)}
         </Text>
       </Page>
     </Document>
@@ -247,15 +269,24 @@ export function PaqueteDoc({
   pago,
   tasa,
   empleados,
+  empresa,
 }: {
   pago: PagoHistorial;
   tasa: number;
   empleados: Empleado[];
+  empresa: Empresa;
 }) {
   return (
     <Document>
       {pago.detalle.map((d, i) => (
-        <ReciboPage key={i} d={d} pago={pago} tasa={tasa} info={datosEmpleado(d, empleados)} />
+        <ReciboPage
+          key={i}
+          d={d}
+          pago={pago}
+          tasa={tasa}
+          info={datosEmpleado(d, empleados)}
+          empresa={empresa}
+        />
       ))}
     </Document>
   );

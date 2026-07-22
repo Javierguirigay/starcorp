@@ -2,7 +2,7 @@ import type { Consumible } from "../types";
 
 /* Catálogo inicial de consumibles/repuestos con control de existencias.
    Los equipos (data/equipos.ts) referencian estos ids en su ficha. */
-export const CONSUMIBLES_SEED: Consumible[] = [
+const CONSUMIBLES_RAW: Omit<Consumible, "empresaId">[] = [
   { id: 1, nombre: "Aceite de motor 15W40", tipo: "Aceite", unidad: "litro", cantidad: 40, stockMinimo: 20, ubicacion: "Almacén LOTER" },
   { id: 2, nombre: "Filtro de aceite", tipo: "Filtro", unidad: "unidad", cantidad: 8, stockMinimo: 4, ubicacion: "Almacén LOTER" },
   { id: 3, nombre: "Filtro de combustible", tipo: "Filtro", unidad: "unidad", cantidad: 3, stockMinimo: 4, ubicacion: "Almacén LOTER" },
@@ -12,5 +12,11 @@ export const CONSUMIBLES_SEED: Consumible[] = [
   { id: 7, nombre: "Refrigerante", tipo: "Refrigerante", unidad: "litro", cantidad: 15, stockMinimo: 10, ubicacion: "Almacén LOTER" },
   { id: 8, nombre: "Neumático 1100R20", tipo: "Neumático", unidad: "unidad", cantidad: 4, stockMinimo: 4, ubicacion: "Patio LOTER" },
 ];
+
+/* Todos de LOTER (empresaId). */
+export const CONSUMIBLES_SEED: Consumible[] = CONSUMIBLES_RAW.map((c) => ({
+  ...c,
+  empresaId: "loter",
+}));
 
 export const NEXT_CONSUMIBLE_ID = 9;

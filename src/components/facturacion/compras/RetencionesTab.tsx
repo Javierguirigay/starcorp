@@ -52,7 +52,7 @@ export function RetencionesTab() {
         import("@/components/pdf/descargar"),
       ]);
       const blob = await generarPdfBlob(
-        <docs.ComprobanteRetencionDoc retencion={r} proveedor={proveedor} />
+        <docs.ComprobanteRetencionDoc retencion={r} proveedor={proveedor} empresa={fac.empresa} />
       );
       setPreview({
         url: URL.createObjectURL(blob),

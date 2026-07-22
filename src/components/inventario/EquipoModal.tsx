@@ -7,12 +7,13 @@
  * y herramientas muestra "garantía". Marca/modelo/serial y notas en todas.
  */
 import { useState } from "react";
-import { Plus, X } from "lucide-react";
+import { List, Plus, X } from "lucide-react";
 import type { CategoriaEquipo, EquipoConsumible, FichaEquipo, Equipo } from "@/lib/types";
 import { CATEGORIAS_EQUIPO } from "@/lib/data/equipos";
 import { Modal } from "@/components/ui/Modal";
 import { useInventario } from "./InventarioProvider";
 import { ConsumibleModal } from "./ConsumibleModal";
+import { UbicacionSelect } from "./UbicacionSelect";
 
 const inputCls =
   "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100";
@@ -28,7 +29,7 @@ const ROLES_SUGERIDOS = [
   "Neumáticos",
 ];
 
-type Fila = { rol: string; consumibleId: number | "" };
+type Fila = { rol: string; consumibleId: number | ""; nuevoRol?: boolean };
 
 export function EquipoModal({
   equipo,
@@ -59,14 +60,14 @@ export function EquipoModal({
 
   const catalogo = [...inv.consumibles].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
-  const setFila = (i: number, campo: keyof Fila, valor: string) =>
-    setFilas((fs) =>
-      fs.map((f, j) =>
-        j === i
-          ? { ...f, [campo]: campo === "consumibleId" ? (valor === "" ? "" : Number(valor)) : valor }
-          : f
-      )
-    );
+  // Roles sugeridos + los ya escritos en las filas, para que un rol propio ya
+  // guardado aparezca como opción normal del desplegable.
+  const opcionesRol = Array.from(
+    new Set<string>([...ROLES_SUGERIDOS, ...filas.map((f) => f.rol).filter(Boolean)])
+  );
+
+  const actualizarFila = (i: number, patch: Partial<Fila>) =>
+    setFilas((fs) => fs.map((f, j) => (j === i ? { ...f, ...patch } : f)));
   const agregarFila = () => setFilas((fs) => [...fs, { rol: "", consumibleId: "" }]);
   const quitarFila = (i: number) => setFilas((fs) => fs.filter((_, j) => j !== i));
 
@@ -135,7 +136,7 @@ export function EquipoModal({
             </div>
             <div className="sm:col-span-3">
               <label className="mb-1.5 block text-sm font-600 text-navy-900">Ubicación</label>
-              <input className={inputCls} value={ubicacion} onChange={(e) => setUbicacion(e.target.value)} />
+              <UbicacionSelect value={ubicacion} onChange={setUbicacion} />
             </div>
           </div>
 
@@ -190,16 +191,53 @@ export function EquipoModal({
               <div className="space-y-2">
                 {filas.map((f, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <input
-                      list="roles-consumible"
-                      value={f.rol}
-                      onChange={(e) => setFila(i, "rol", e.target.value)}
-                      placeholder="Rol (Aceite…)"
-                      className="w-40 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100"
-                    />
+                    {f.nuevoRol ? (
+                      <div className="flex w-40 items-center gap-1">
+                        <input
+                          autoFocus
+                          value={f.rol}
+                          onChange={(e) => actualizarFila(i, { rol: e.target.value })}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") actualizarFila(i, { nuevoRol: false });
+                          }}
+                          placeholder="Nuevo rol"
+                          className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => actualizarFila(i, { nuevoRol: false })}
+                          title="Elegir de la lista"
+                          className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-navy-700"
+                        >
+                          <List className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        value={f.rol}
+                        onChange={(e) =>
+                          e.target.value === "__nuevo__"
+                            ? actualizarFila(i, { nuevoRol: true, rol: "" })
+                            : actualizarFila(i, { rol: e.target.value })
+                        }
+                        className="w-40 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100"
+                      >
+                        <option value="">Rol…</option>
+                        {opcionesRol.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                        <option value="__nuevo__">+ Nuevo rol…</option>
+                      </select>
+                    )}
                     <select
                       value={f.consumibleId}
-                      onChange={(e) => setFila(i, "consumibleId", e.target.value)}
+                      onChange={(e) =>
+                        actualizarFila(i, {
+                          consumibleId: e.target.value === "" ? "" : Number(e.target.value),
+                        })
+                      }
                       className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100"
                     >
                       <option value="">Selecciona consumible…</option>
@@ -224,11 +262,6 @@ export function EquipoModal({
                 >
                   <Plus className="h-3.5 w-3.5" /> Agregar consumible
                 </button>
-                <datalist id="roles-consumible">
-                  {ROLES_SUGERIDOS.map((r) => (
-                    <option key={r} value={r} />
-                  ))}
-                </datalist>
               </div>
             </div>
           )}

@@ -12,7 +12,7 @@ export const CATEGORIAS_EQUIPO: Record<CategoriaEquipo, string> = {
    (Disponible/Asignado/Mantenimiento) NO se guarda: se deriva de las órdenes
    de mantenimiento y asignaciones (derivarEstadoEquipo). Chuto trae ficha y
    consumibles de ejemplo (referencian ids de CONSUMIBLES_SEED). */
-export const EQUIPOS: Equipo[] = [
+const EQUIPOS_RAW: Omit<Equipo, "empresaId">[] = [
   {
     id: 1,
     codigo: "Chuto",
@@ -52,6 +52,9 @@ export const EQUIPOS: Equipo[] = [
   },
   { id: 8, codigo: "Lowboy", categoria: "petrolero", ubicacion: "Patio LOTER" },
 ];
+
+/* Todos de LOTER: el inventario se aísla por empresa (empresaId). */
+export const EQUIPOS: Equipo[] = EQUIPOS_RAW.map((e) => ({ ...e, empresaId: "loter" }));
 
 /* Los ids no se reciclan: el 9 fue "Traslado" (eliminado del catálogo). */
 export const NEXT_EQUIPO_ID = 10;

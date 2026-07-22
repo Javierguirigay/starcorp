@@ -2,19 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { Eye, FileDown, Files, Table2 } from "lucide-react";
-import type { Empleado, PagoHistorial } from "@/lib/types";
+import type { Empleado, Empresa, PagoHistorial } from "@/lib/types";
 import { formatFechaVE, money } from "@/lib/format";
 import { Modal } from "@/components/ui/Modal";
 import { descargarBlob } from "@/components/pdf/descargar";
 
 export function DetalleModal({
   pago,
+  empresa,
   tasa,
   empleados,
   onToast,
   onClose,
 }: {
   pago: PagoHistorial;
+  empresa: Empresa;
   tasa: number;
   empleados: Empleado[];
   onToast: (msg: string) => void;
@@ -52,15 +54,15 @@ export function DetalleModal({
       let titulo: string;
       if (accion === "recibo" && idxDetalle !== undefined) {
         const d = pago.detalle[idxDetalle];
-        doc = <docs.ReciboDoc d={d} pago={pago} tasa={tasa} info={docs.datosEmpleado(d, empleados)} />;
+        doc = <docs.ReciboDoc d={d} pago={pago} tasa={tasa} info={docs.datosEmpleado(d, empleados)} empresa={empresa} />;
         nombre = `recibo_${slug(d.nombre)}_${periodo}.pdf`;
         titulo = `Recibo — ${d.nombre}`;
       } else if (accion === "consolidado") {
-        doc = <docs.ConsolidadoDoc pago={pago} tasa={tasa} />;
+        doc = <docs.ConsolidadoDoc pago={pago} tasa={tasa} empresa={empresa} />;
         nombre = `consolidado_${periodo}.pdf`;
         titulo = "Reporte consolidado";
       } else {
-        doc = <docs.PaqueteDoc pago={pago} tasa={tasa} empleados={empleados} />;
+        doc = <docs.PaqueteDoc pago={pago} tasa={tasa} empleados={empleados} empresa={empresa} />;
         nombre = `recibos_${periodo}.pdf`;
         titulo = "Todos los recibos";
       }

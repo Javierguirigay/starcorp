@@ -10,7 +10,12 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import type { Empresa, TipoTransaccion, TransaccionFinanciera } from "@/lib/types";
 import { fmtISO, formatNumberVE, money, parseVES } from "@/lib/format";
-import { categoriasParaTipo, convertirMonto, SIMBOLO_MONEDA } from "@/lib/negocio/finanzas";
+import {
+  categoriasParaTipo,
+  convertirMonto,
+  fondosSuficientes,
+  SIMBOLO_MONEDA,
+} from "@/lib/negocio/finanzas";
 import { round2 } from "@/lib/negocio/nomina";
 import { Modal } from "@/components/ui/Modal";
 import { useFinanzas } from "./FinanzasProvider";
@@ -67,6 +72,18 @@ export function TransaccionModal({
         : money(convertirMonto(monto, cuenta.moneda, "VES", tasaAplicada), "Bs")
       : null;
 
+  // Al editar, el efecto de la propia fila ya está en el saldo: se excluye para
+  // que el monto que "libera" cuente como disponible (igual que en traspasos).
+  const transaccionesSinPropias = transaccion
+    ? finanzas.transacciones.filter((t) => t.id !== transaccion.id)
+    : finanzas.transacciones;
+  // Solo los egresos pueden dejar la cuenta en negativo: se valida por cuenta en
+  // su moneda nativa. Ingresos y montos vacíos no requieren chequeo.
+  const fondos =
+    tipo === "salida" && cuenta && monto > 0
+      ? fondosSuficientes(cuenta.id, monto, transaccionesSinPropias)
+      : null;
+
   const cambiarTipo = (t: TipoTransaccion) => {
     setTipo(t);
     // Si la categoría elegida no aplica al nuevo flujo, se limpia.
@@ -99,6 +116,15 @@ export function TransaccionModal({
     }
     if (monto <= 0) {
       onToast(`Indica un monto en ${cuenta.moneda} mayor que cero`);
+      return;
+    }
+    if (fondos && !fondos.ok) {
+      onToast(
+        `Fondos insuficientes en ${cuenta.nombre}: disponible ${money(
+          fondos.disponible,
+          SIMBOLO_MONEDA[cuenta.moneda]
+        )}. El movimiento no puede realizarse.`
+      );
       return;
     }
     if (categoriaId === "" || !opciones.some((c) => c.id === categoriaId)) {
@@ -252,6 +278,15 @@ export function TransaccionModal({
                 ? `≈ ${equivalente}`
                 : `Tasa ${money(tasaAplicada, "Bs")} / USD`}
             </p>
+            {fondos && (
+              <p
+                className={`mt-1 text-right font-mono text-[11px] ${
+                  fondos.ok ? "text-slate-400" : "text-rose-600"
+                }`}
+              >
+                Disponible: {money(fondos.disponible, SIMBOLO_MONEDA[cuenta!.moneda])}
+              </p>
+            )}
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-600 text-navy-900">Fecha</label>

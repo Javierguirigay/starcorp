@@ -7,10 +7,10 @@
  * con `await import(...)` desde un handler de cliente.
  */
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import type { Orden } from "@/lib/types";
+import type { Empresa, Orden } from "@/lib/types";
 import { formatFechaVE, formatNumberVE } from "@/lib/format";
 import { TITULO_ORDEN, totalRenglonOrden, totalesOrden } from "@/lib/negocio/ordenes";
-import { BORDE, MembreteLoter, NEGRO, SLATE } from "@/components/pdf/Membrete";
+import { BORDE, MembreteEmpresa, membreteDeEmpresa, NEGRO, SLATE } from "@/components/pdf/Membrete";
 
 const s = StyleSheet.create({
   page: { padding: 36, fontFamily: "Helvetica", fontSize: 8, color: NEGRO },
@@ -95,7 +95,7 @@ function Dato({ etq, valor }: { etq: string; valor?: string }) {
   );
 }
 
-export function OrdenDoc({ orden }: { orden: Orden }) {
+export function OrdenDoc({ orden, empresa }: { orden: Orden; empresa: Empresa }) {
   const conPrecios = orden.tipo === "compra";
   const t = conPrecios ? totalesOrden(orden.renglones) : null;
   // Anchos en pt: con precios la descripción cede espacio a las 2 columnas de montos.
@@ -109,7 +109,7 @@ export function OrdenDoc({ orden }: { orden: Orden }) {
   return (
     <Document>
       <Page size="LETTER" style={s.page}>
-        <MembreteLoter />
+        <MembreteEmpresa datos={membreteDeEmpresa(empresa)} />
 
         <View style={s.tituloCaja}>
           <Text style={s.titulo}>{TITULO_ORDEN[orden.tipo].toUpperCase()}</Text>

@@ -163,7 +163,7 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
       const sub = subtotales(lista);
       const doc = (
         <docs.ReporteFinancieroDoc
-          empresaLinea={empresaLinea}
+          empresa={empresa}
           titulo={`Reporte Financiero — Finanzas ${etiqueta}`}
           subtitulo={`${esEntrada ? "Ingresos" : "Egresos"} · Generado el ${formatFechaVE(
             hoy
@@ -216,7 +216,7 @@ export function FinanzasEmpresa({ empresa }: { empresa: Empresa }) {
       const hoy = fmtISO(new Date());
       const doc = (
         <docs.ReporteMovimientosDoc
-          empresaLinea={empresaLinea}
+          empresa={empresa}
           titulo={`Reporte Financiero — Finanzas ${etiqueta}`}
           subtitulo={`Todos los movimientos · Generado el ${formatFechaVE(
             hoy

@@ -4,27 +4,9 @@
  * con `await import(...)` desde un handler de cliente, nunca en el bundle inicial.
  */
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import type { DatosOrdenAsignacion } from "@/lib/types";
 import { formatFechaVE } from "@/lib/format";
 import { BORDE, MembreteLoter, NEGRO, SLATE } from "@/components/pdf/Membrete";
-
-export interface FilaOrdenAsignacion {
-  id: string;
-  equipo: string;
-  desde: string;
-  hasta: string;
-  dias: number;
-  observaciones: string;
-}
-
-export interface DatosOrdenAsignacion {
-  numero: string;
-  fecha: string; // ISO yyyy-mm-dd (fecha de solicitud)
-  cliente: string;
-  observaciones: string;
-  entregadoPor: string;
-  recibidoPor: string;
-  filas: FilaOrdenAsignacion[];
-}
 
 const s = StyleSheet.create({
   page: { padding: 36, fontFamily: "Helvetica", fontSize: 8, color: NEGRO },

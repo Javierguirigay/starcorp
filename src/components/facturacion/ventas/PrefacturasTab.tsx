@@ -72,6 +72,7 @@ export function PrefacturasTab() {
           condicionesPago={p.condicionesPago}
           renglones={p.renglones}
           locacion={p.locacion}
+          empresa={fac.empresa}
         />
       );
       const blob = await generarPdfBlob(doc);

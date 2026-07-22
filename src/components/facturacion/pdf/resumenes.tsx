@@ -6,7 +6,8 @@
  * `await import(...)` desde un handler de cliente.
  */
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import { LOTER_RIF } from "@/lib/config";
+import type { Empresa } from "@/lib/types";
+import { datosFiscalesDe } from "@/lib/empresaFiscal";
 import { formatNumberVE } from "@/lib/format";
 import type { ResumenCreditos } from "@/lib/negocio/compras";
 import type { ResumenFiscal } from "@/lib/negocio/resumenFiscal";
@@ -51,6 +52,7 @@ function ResumenFiscalDoc({
   filas,
   simples,
   nota,
+  empresa,
 }: {
   titulo: string; // "RESUMEN DE CRÉDITOS FISCALES IVA" / "…DÉBITOS…"
   periodo: string; // "JULIO 2026"
@@ -59,14 +61,16 @@ function ResumenFiscalDoc({
   filas: FilaBaseMonto[];
   simples: FilaSimple[];
   nota?: string;
+  empresa: Empresa;
 }) {
+  const fisc = datosFiscalesDe(empresa.key);
   return (
     <Document>
       <Page size="LETTER" style={rc.page}>
-        <Text style={rc.titulo}>LOTER, C.A</Text>
+        <Text style={rc.titulo}>{fisc.razonSocial}</Text>
         <Text style={rc.sub}>{titulo}</Text>
         <Text style={rc.sub}>{periodo}</Text>
-        <Text style={[rc.sub, { fontSize: 9 }]}>{LOTER_RIF}</Text>
+        <Text style={[rc.sub, { fontSize: 9 }]}>{fisc.rif}</Text>
 
         <View style={rc.tabla}>
           <View style={[rc.fila, rc.cab]}>
@@ -103,12 +107,15 @@ function ResumenFiscalDoc({
 export function ResumenCreditosDoc({
   periodo,
   resumen,
+  empresa,
 }: {
   periodo: string;
   resumen: ResumenCreditos;
+  empresa: Empresa;
 }) {
   return (
     <ResumenFiscalDoc
+      empresa={empresa}
       titulo="RESUMEN DE CRÉDITOS FISCALES IVA"
       periodo={periodo}
       seccion="CRÉDITOS FISCALES"
@@ -140,12 +147,15 @@ export function ResumenCreditosDoc({
 export function ResumenDebitosDoc({
   periodo,
   resumen,
+  empresa,
 }: {
   periodo: string;
   resumen: ResumenFiscal;
+  empresa: Empresa;
 }) {
   return (
     <ResumenFiscalDoc
+      empresa={empresa}
       titulo="RESUMEN DE DÉBITOS FISCALES IVA"
       periodo={periodo}
       seccion="DÉBITOS FISCALES"

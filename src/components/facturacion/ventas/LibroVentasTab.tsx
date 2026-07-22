@@ -49,7 +49,7 @@ export function LibroVentasTab() {
         import("@/components/pdf/descargar"),
       ]);
       const blob = await generarPdfBlob(
-        <docs.LibroVentasDoc periodo={periodo} filas={filas} totales={totales} />
+        <docs.LibroVentasDoc periodo={periodo} filas={filas} totales={totales} empresa={fac.empresa} />
       );
       setPreview({
         url: URL.createObjectURL(blob),

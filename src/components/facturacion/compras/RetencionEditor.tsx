@@ -9,7 +9,7 @@
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { FacturaRecibida, PorcentajeRetencion, TipoTransaccionCompra } from "@/lib/types";
-import { LOTER_DIRECCION, LOTER_RAZON, LOTER_RIF } from "@/lib/config";
+import { datosFiscalesDe } from "@/lib/empresaFiscal";
 import { fmtISO, formatNumberVE, money, parseVES } from "@/lib/format";
 import { derivarMontosFacturaRecibida } from "@/lib/negocio/compras";
 import { MESES, retenidoDeImpuesto, totalizarLineas } from "@/lib/negocio/retenciones";
@@ -51,6 +51,8 @@ export function RetencionEditor({
   onClose: () => void;
 }) {
   const fac = useFacturacion();
+  // Agente de retención = empresa activa (emisora del comprobante).
+  const agente = datosFiscalesDe(fac.empresa.key);
 
   const hoy = fmtISO(new Date());
   const [anioMesInicial] = useState(() => {
@@ -274,12 +276,12 @@ export function RetencionEditor({
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="rounded-xl border border-slate-200 p-4">
               <p className="mb-2 text-[11px] font-600 uppercase tracking-wide text-slate-400">
-                Agente de retención (LOTER)
+                Agente de retención ({agente.marca.principal})
               </p>
               <div className="space-y-2">
-                <input readOnly value={LOTER_RAZON} className={roCls} />
-                <input readOnly value={LOTER_RIF} className={roCls} />
-                <input readOnly value={LOTER_DIRECCION} className={roCls} />
+                <input readOnly value={agente.razonSocial} className={roCls} />
+                <input readOnly value={agente.rif} className={roCls} />
+                <input readOnly value={agente.direccion ?? ""} className={roCls} />
               </div>
             </div>
             <div className="rounded-xl border border-slate-200 p-4">

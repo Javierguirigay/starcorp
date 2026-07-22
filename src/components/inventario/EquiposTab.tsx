@@ -9,7 +9,10 @@ import { useEffect, useState } from "react";
 import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import type { CategoriaEquipo, Equipo, EstadoEquipo } from "@/lib/types";
 import { CATEGORIAS_EQUIPO } from "@/lib/data/equipos";
+import { filtrarEquipos } from "@/lib/negocio/inventario";
+import { formatFechaVE } from "@/lib/format";
 import { Toast } from "@/components/ui/Toast";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { useInventario } from "./InventarioProvider";
 import { EquipoModal } from "./EquipoModal";
 import { EquipoDetalleModal } from "./EquipoDetalleModal";
@@ -18,6 +21,7 @@ const ESTILO_ESTADO: Record<EstadoEquipo, string> = {
   Disponible: "bg-emerald-50 text-emerald-700",
   Asignado: "bg-navy-50 text-navy-700",
   Mantenimiento: "bg-gold-500/15 text-gold-600",
+  Retirado: "bg-slate-100 text-slate-500",
 };
 
 type ModalAbierto = { tipo: "editor"; id: number | null } | { tipo: "detalle"; id: number } | null;
@@ -25,6 +29,8 @@ type ModalAbierto = { tipo: "editor"; id: number | null } | { tipo: "detalle"; i
 export function EquiposTab({ categoria }: { categoria: CategoriaEquipo }) {
   const inv = useInventario();
   const [modal, setModal] = useState<ModalAbierto>(null);
+  const [verBajas, setVerBajas] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,7 +39,11 @@ export function EquiposTab({ categoria }: { categoria: CategoriaEquipo }) {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const visibles = inv.equipos.filter((e) => e.categoria === categoria);
+  const deCategoria = inv.equipos.filter((e) => e.categoria === categoria);
+  const bajas = deCategoria.filter((e) => e.baja);
+  // La tabla muestra el inventario activo; las bajas/ventas solo con el toggle.
+  const activos = verBajas ? deCategoria : deCategoria.filter((e) => !e.baja);
+  const visibles = filtrarEquipos(activos, busqueda);
   const equipoDe = (id: number) => inv.equipoPorId(id) ?? null;
 
   const eliminar = (e: Equipo) => {
@@ -54,12 +64,31 @@ export function EquiposTab({ categoria }: { categoria: CategoriaEquipo }) {
               Registro con ficha técnica y consumibles que usa cada equipo
             </p>
           </div>
-          <button
-            onClick={() => setModal({ tipo: "editor", id: null })}
-            className="inline-flex items-center gap-2 rounded-xl bg-navy-900 px-4 py-2 text-sm font-600 text-white hover:bg-navy-800"
-          >
-            <Plus className="h-[18px] w-[18px]" /> Registrar {CATEGORIAS_EQUIPO[categoria].toLowerCase()}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <SearchInput
+              value={busqueda}
+              onChange={setBusqueda}
+              placeholder="Código, ubicación, marca…"
+              className="w-full sm:w-56"
+            />
+            {bajas.length > 0 && (
+              <label className="flex items-center gap-1.5 text-xs font-600 text-slate-500">
+                <input
+                  type="checkbox"
+                  checked={verBajas}
+                  onChange={(e) => setVerBajas(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-navy-900 focus:ring-navy-500"
+                />
+                Ver bajas y ventas ({bajas.length})
+              </label>
+            )}
+            <button
+              onClick={() => setModal({ tipo: "editor", id: null })}
+              className="inline-flex items-center gap-2 rounded-xl bg-navy-900 px-4 py-2 text-sm font-600 text-white hover:bg-navy-800"
+            >
+              <Plus className="h-[18px] w-[18px]" /> Registrar {CATEGORIAS_EQUIPO[categoria].toLowerCase()}
+            </button>
+          </div>
         </div>
 
         <div className="table-wrap">
@@ -77,7 +106,9 @@ export function EquiposTab({ categoria }: { categoria: CategoriaEquipo }) {
               {visibles.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">
-                    No hay equipos registrados en esta categoría.
+                    {activos.length === 0
+                      ? "No hay equipos registrados en esta categoría."
+                      : "Ningún equipo coincide con la búsqueda."}
                   </td>
                 </tr>
               ) : (
@@ -92,11 +123,20 @@ export function EquiposTab({ categoria }: { categoria: CategoriaEquipo }) {
                       {(() => {
                         const estado = inv.estadoDe(e.codigo);
                         return (
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-xs font-600 ${ESTILO_ESTADO[estado]}`}
-                          >
-                            {estado}
-                          </span>
+                          <>
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-600 ${ESTILO_ESTADO[estado]}`}
+                            >
+                              {estado}
+                            </span>
+                            {e.baja && (
+                              <p className="mt-1 text-[11px] text-slate-400">
+                                {e.baja.motivo === "venta" ? "Venta" : "Baja"}
+                                {e.baja.referencia ? ` · ${e.baja.referencia}` : ""} ·{" "}
+                                {formatFechaVE(e.baja.fecha)}
+                              </p>
+                            )}
+                          </>
                         );
                       })()}
                     </td>

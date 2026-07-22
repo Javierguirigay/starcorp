@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { APP_NAME } from "@/lib/config";
-import { EMPRESAS } from "@/lib/data/empresas";
 import { LoginForm } from "@/components/login/LoginForm";
 import { LogoMark } from "@/components/ui/LogoMark";
 
@@ -41,26 +40,10 @@ export default function LoginPage() {
             Control operativo y administrativo de las empresas del grupo: nómina, finanzas,
             facturación, retenciones, inventario y asignación de equipos en campo.
           </p>
-
-          <div className="mt-8 flex flex-wrap gap-2">
-            {EMPRESAS.map((e) =>
-              e.activa ? (
-                <span
-                  key={e.key}
-                  className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-600 text-white ring-1 ring-white/10"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span> {e.nombre}
-                </span>
-              ) : (
-                <span
-                  key={e.key}
-                  className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1.5 text-xs font-500 text-slate-400 ring-1 ring-white/5"
-                >
-                  {e.nombre}
-                </span>
-              )
-            )}
-          </div>
+          {/* Aquí NO va el listado de empresas del conglomerado: esta página es
+              pública (previa al login) y sus nombres —y los de las personas del
+              grupo— no deben quedar expuestos. Solo se muestran ya dentro del
+              sistema (selector del topbar, Finanzas). */}
         </div>
 
         <p className="relative text-xs text-slate-500">

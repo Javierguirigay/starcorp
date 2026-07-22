@@ -45,7 +45,9 @@ const parseCedula = (valor: string): { nac: string; digitos: string } => {
 };
 
 /** Datos del empleado sin id (payload de alta/edición). */
-export type EmpleadoDatos = Omit<Empleado, "id">;
+/** Datos del formulario de empleado. `empresaId` no lo maneja el formulario:
+    lo estampa el módulo según la empresa activa. */
+export type EmpleadoDatos = Omit<Empleado, "id" | "empresaId">;
 
 const BANCO_VACIO: DatosBancarios = {
   banco: "",

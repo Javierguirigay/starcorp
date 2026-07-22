@@ -78,7 +78,13 @@ export function MantenimientoModule() {
   const registroDe = (id: number) => inv.mantenimientos.find((m) => m.id === id) ?? null;
 
   const eliminar = (m: RegistroMantenimiento) => {
-    if (!confirm(`¿Eliminar el mantenimiento de "${m.equipo}"?`)) return;
+    const extra =
+      m.estado === "Completado" && m.materiales?.some((x) => x.consumibleId !== undefined)
+        ? " Se restituirá el stock de sus materiales."
+        : "";
+    if (!confirm(`¿Eliminar el mantenimiento de "${m.equipo}"?${extra}`)) return;
+    // Restituye el stock y borra los movimientos MTTO (no-op si nunca aplicó).
+    inv.revertirMantenimiento(m.id);
     inv.eliminarMantenimiento(m.id);
     setToast("Mantenimiento eliminado");
   };
@@ -90,6 +96,8 @@ export function MantenimientoModule() {
     realizado: fecha(m.realizado),
     estado: m.estado,
     tecnico: m.tecnico,
+    materiales:
+      m.materiales?.map((x) => `${x.cantidad} ${x.unidad} ${x.descripcion}`).join("; ") || "—",
     observaciones: m.observaciones,
   });
 

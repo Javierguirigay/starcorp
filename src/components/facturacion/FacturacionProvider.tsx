@@ -18,6 +18,7 @@ import type {
   CampoPlantilla,
   Cliente,
   CuentaPorPagar,
+  Empresa,
   Factura,
   FacturaRecibida,
   PosicionMm,
@@ -27,6 +28,7 @@ import type {
   Retencion,
   TarifaServicio,
 } from "@/lib/types";
+import { EMPRESAS } from "@/lib/data/empresas";
 import {
   CALIBRACION_DEFAULT,
   CLIENTES_SEED,
@@ -76,12 +78,14 @@ interface EstadoFacturacion {
   nextTarifaId: number;
 }
 
-export type ReporteDatos = Omit<ReporteServicio, "id" | "estado">;
-export type TarifaDatos = Omit<TarifaServicio, "id">;
-export type PrefacturaDatos = Omit<PreFactura, "id" | "estado" | "reporteIds">;
-export type FacturaRecibidaDatos = Omit<FacturaRecibida, "id" | "estado" | "retencionId">;
-export type CuentaPorPagarDatos = Omit<CuentaPorPagar, "id" | "estado" | "facturaRecibidaId">;
-export type RetencionDatos = Omit<Retencion, "id">;
+// Los "Datos" que arma la UI no incluyen empresaId: lo estampa el reducer con
+// la empresa activa (o la heredan de su documento de origen).
+export type ReporteDatos = Omit<ReporteServicio, "id" | "empresaId" | "estado">;
+export type TarifaDatos = Omit<TarifaServicio, "id" | "empresaId">;
+export type PrefacturaDatos = Omit<PreFactura, "id" | "empresaId" | "estado" | "reporteIds">;
+export type FacturaRecibidaDatos = Omit<FacturaRecibida, "id" | "empresaId" | "estado" | "retencionId">;
+export type CuentaPorPagarDatos = Omit<CuentaPorPagar, "id" | "empresaId" | "estado" | "facturaRecibidaId">;
+export type RetencionDatos = Omit<Retencion, "id" | "empresaId">;
 
 export interface GenerarFacturaDatos {
   numeroFactura: string;
@@ -91,22 +95,22 @@ export interface GenerarFacturaDatos {
 }
 
 type Accion =
-  | { tipo: "crearCliente"; datos: Omit<Cliente, "id"> }
-  | { tipo: "crearProveedor"; datos: Omit<Proveedor, "id"> }
-  | { tipo: "crearReporte"; datos: ReporteDatos }
+  | { tipo: "crearCliente"; empresaId: string; datos: Omit<Cliente, "id" | "empresaId"> }
+  | { tipo: "crearProveedor"; empresaId: string; datos: Omit<Proveedor, "id" | "empresaId"> }
+  | { tipo: "crearReporte"; empresaId: string; datos: ReporteDatos }
   | { tipo: "editarReporte"; id: number; datos: ReporteDatos }
   | { tipo: "eliminarReporte"; id: number }
-  | { tipo: "crearPrefactura"; datos: PrefacturaDatos; reporteIds: number[] }
+  | { tipo: "crearPrefactura"; empresaId: string; datos: PrefacturaDatos; reporteIds: number[] }
   | { tipo: "editarPrefactura"; id: number; datos: PrefacturaDatos }
   | { tipo: "emitirPrefactura"; id: number }
   | { tipo: "eliminarPrefactura"; id: number }
   | { tipo: "generarFactura"; prefacturaId: number; datos: GenerarFacturaDatos }
   | { tipo: "marcarFacturaCobrada"; id: number }
-  | { tipo: "crearFacturaRecibida"; datos: FacturaRecibidaDatos }
+  | { tipo: "crearFacturaRecibida"; empresaId: string; datos: FacturaRecibidaDatos }
   | { tipo: "editarFacturaRecibida"; id: number; datos: FacturaRecibidaDatos }
   | { tipo: "eliminarFacturaRecibida"; id: number }
   // Cuentas por pagar (Control Administrativo): modelo propio no fiscal.
-  | { tipo: "crearCuentaPorPagar"; datos: CuentaPorPagarDatos }
+  | { tipo: "crearCuentaPorPagar"; empresaId: string; datos: CuentaPorPagarDatos }
   | { tipo: "editarCuentaPorPagar"; id: number; datos: CuentaPorPagarDatos }
   | { tipo: "eliminarCuentaPorPagar"; id: number }
   | { tipo: "setVencimientoCuentaPorPagar"; id: number; fecha: string }
@@ -114,10 +118,10 @@ type Accion =
   | { tipo: "pagarCuentaPorPagar"; id: number; datos: FacturaRecibidaDatos }
   // Vencimiento editable desde la cartera (Control Administrativo).
   | { tipo: "setVencimientoFactura"; id: number; fecha: string }
-  | { tipo: "crearRetencion"; datos: RetencionDatos }
+  | { tipo: "crearRetencion"; empresaId: string; datos: RetencionDatos }
   | { tipo: "eliminarRetencion"; id: number }
   // Gestión de Tarifas (catálogo de servicios referenciales).
-  | { tipo: "crearTarifa"; datos: TarifaDatos }
+  | { tipo: "crearTarifa"; empresaId: string; datos: TarifaDatos }
   | { tipo: "editarTarifa"; id: number; datos: TarifaDatos }
   | { tipo: "eliminarTarifa"; id: number }
   | { tipo: "setCalibracionCampo"; campo: CampoPlantilla; pos: PosicionMm }
@@ -151,14 +155,20 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
     case "crearCliente":
       return {
         ...estado,
-        clientes: [...estado.clientes, { id: estado.nextClienteId, ...accion.datos }],
+        clientes: [
+          ...estado.clientes,
+          { id: estado.nextClienteId, empresaId: accion.empresaId, ...accion.datos },
+        ],
         nextClienteId: estado.nextClienteId + 1,
       };
 
     case "crearProveedor":
       return {
         ...estado,
-        proveedores: [...estado.proveedores, { id: estado.nextProveedorId, ...accion.datos }],
+        proveedores: [
+          ...estado.proveedores,
+          { id: estado.nextProveedorId, empresaId: accion.empresaId, ...accion.datos },
+        ],
         nextProveedorId: estado.nextProveedorId + 1,
       };
 
@@ -167,7 +177,7 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
         ...estado,
         reportes: [
           ...estado.reportes,
-          { id: estado.nextReporteId, ...accion.datos, estado: "pendiente" },
+          { id: estado.nextReporteId, empresaId: accion.empresaId, ...accion.datos, estado: "pendiente" },
         ],
         nextReporteId: estado.nextReporteId + 1,
       };
@@ -190,6 +200,7 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
     case "crearPrefactura": {
       const nueva: PreFactura = {
         id: estado.nextPrefacturaId,
+        empresaId: accion.empresaId,
         ...accion.datos,
         estado: "borrador",
         reporteIds: accion.reporteIds,
@@ -238,6 +249,7 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
       if (!pf || pf.estado === "facturada" || accion.datos.tasaBs <= 0) return estado;
       const factura: Factura = {
         id: estado.nextFacturaId,
+        empresaId: pf.empresaId,
         prefacturaId: pf.id,
         numeroFactura: accion.datos.numeroFactura,
         numeroControl: accion.datos.numeroControl,
@@ -276,7 +288,7 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
         ...estado,
         facturasRecibidas: [
           ...estado.facturasRecibidas,
-          { id: estado.nextFacturaRecibidaId, ...accion.datos, estado: "pagada" },
+          { id: estado.nextFacturaRecibidaId, empresaId: accion.empresaId, ...accion.datos, estado: "pagada" },
         ],
         nextFacturaRecibidaId: estado.nextFacturaRecibidaId + 1,
       };
@@ -305,7 +317,7 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
         ...estado,
         cuentasPorPagar: [
           ...estado.cuentasPorPagar,
-          { id: estado.nextCuentaPorPagarId, ...accion.datos, estado: "pendiente" },
+          { id: estado.nextCuentaPorPagarId, empresaId: accion.empresaId, ...accion.datos, estado: "pendiente" },
         ],
         nextCuentaPorPagarId: estado.nextCuentaPorPagarId + 1,
       };
@@ -344,7 +356,7 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
         ...estado,
         facturasRecibidas: [
           ...estado.facturasRecibidas,
-          { id: nuevaId, ...accion.datos, estado: "pagada" },
+          { id: nuevaId, empresaId: cuenta.empresaId, ...accion.datos, estado: "pagada" },
         ],
         nextFacturaRecibidaId: nuevaId + 1,
         cuentasPorPagar: estado.cuentasPorPagar.map((d) =>
@@ -363,8 +375,13 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
       };
 
     case "crearRetencion": {
-      // Comprobante único y, si nace de una factura, esta no debe tener otra.
-      if (estado.retenciones.some((r) => r.comprobante === accion.datos.comprobante))
+      // Comprobante único POR EMPRESA (cada empresa lleva su propia serie) y,
+      // si nace de una factura, esta no debe tener otra.
+      if (
+        estado.retenciones.some(
+          (r) => r.empresaId === accion.empresaId && r.comprobante === accion.datos.comprobante
+        )
+      )
         return estado;
       const compra = accion.datos.facturaRecibidaId
         ? estado.facturasRecibidas.find((c) => c.id === accion.datos.facturaRecibidaId)
@@ -373,7 +390,7 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
       const id = estado.nextRetencionId;
       return {
         ...estado,
-        retenciones: [...estado.retenciones, { id, ...accion.datos }],
+        retenciones: [...estado.retenciones, { id, empresaId: accion.empresaId, ...accion.datos }],
         nextRetencionId: id + 1,
         facturasRecibidas: compra
           ? estado.facturasRecibidas.map((c) =>
@@ -395,7 +412,10 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
     case "crearTarifa":
       return {
         ...estado,
-        tarifas: [...estado.tarifas, { id: estado.nextTarifaId, ...accion.datos }],
+        tarifas: [
+          ...estado.tarifas,
+          { id: estado.nextTarifaId, empresaId: accion.empresaId, ...accion.datos },
+        ],
         nextTarifaId: estado.nextTarifaId + 1,
       };
 
@@ -403,7 +423,7 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
       return {
         ...estado,
         tarifas: estado.tarifas.map((t) =>
-          t.id === accion.id ? { id: t.id, ...accion.datos } : t
+          t.id === accion.id ? { id: t.id, empresaId: t.empresaId, ...accion.datos } : t
         ),
       };
 
@@ -433,6 +453,8 @@ function reducer(estado: EstadoFacturacion, accion: Accion): EstadoFacturacion {
 /* ===================== Context + hook ===================== */
 
 interface FacturacionContexto {
+  /** Empresa activa cuyo scope refleja este contexto (colecciones ya filtradas). */
+  empresa: Empresa;
   clientes: Cliente[];
   proveedores: Proveedor[];
   reportes: ReporteServicio[];
@@ -453,8 +475,8 @@ interface FacturacionContexto {
   retencionDeCompra: (facturaRecibidaId: number) => Retencion | undefined;
   siguienteNumeroPrefactura: () => string;
   siguienteComprobanteDe: (anio: number, mes: number) => string;
-  crearCliente: (datos: Omit<Cliente, "id">) => void;
-  crearProveedor: (datos: Omit<Proveedor, "id">) => void;
+  crearCliente: (datos: Omit<Cliente, "id" | "empresaId">) => void;
+  crearProveedor: (datos: Omit<Proveedor, "id" | "empresaId">) => void;
   crearReporte: (datos: ReporteDatos) => void;
   editarReporte: (id: number, datos: ReporteDatos) => void;
   eliminarReporte: (id: number) => void;
@@ -483,76 +505,119 @@ interface FacturacionContexto {
   resetCalibracion: () => void;
 }
 
-const Contexto = createContext<FacturacionContexto | null>(null);
+/* El provider (montado en el layout) guarda el estado de TODAS las empresas;
+   el scope por empresa lo aplica `useFacturacion()` leyendo la empresa activa
+   de EmpresaContexto. Así los 20+ consumidores no cambian: reciben las
+   colecciones ya filtradas y las acciones con empresaId inyectado. */
+interface RawFacturacion {
+  estado: EstadoFacturacion;
+  dispatch: (accion: Accion) => void;
+}
+
+const RawContexto = createContext<RawFacturacion | null>(null);
+
+/* Empresa activa del scope. Por defecto LOTER: los consumidores fuera de
+   Facturación (Control Administrativo, Gestión de Tarifas) no envuelven un
+   scope y siguen viendo LOTER, exactamente como hoy. */
+const EMPRESA_LOTER = EMPRESAS.find((e) => e.key === "loter")!;
+const EmpresaContexto = createContext<Empresa>(EMPRESA_LOTER);
+
+/** Fija la empresa activa para el subárbol (lo usa FacturacionModule). */
+export function FacturacionEmpresaScope({
+  empresa,
+  children,
+}: {
+  empresa: Empresa;
+  children: React.ReactNode;
+}) {
+  return <EmpresaContexto.Provider value={empresa}>{children}</EmpresaContexto.Provider>;
+}
 
 export function FacturacionProvider({ children }: { children: React.ReactNode }) {
   const [estado, dispatch] = useReducer(reducer, ESTADO_INICIAL);
+  const raw = useMemo<RawFacturacion>(() => ({ estado, dispatch }), [estado]);
+  return <RawContexto.Provider value={raw}>{children}</RawContexto.Provider>;
+}
 
-  const valor = useMemo<FacturacionContexto>(
-    () => ({
-      clientes: estado.clientes,
-      proveedores: estado.proveedores,
-      reportes: estado.reportes,
-      prefacturas: estado.prefacturas,
-      facturas: estado.facturas,
-      facturasRecibidas: estado.facturasRecibidas,
-      cuentasPorPagar: estado.cuentasPorPagar,
-      retenciones: estado.retenciones,
-      tarifas: estado.tarifas,
+export function useFacturacion(): FacturacionContexto {
+  const raw = useContext(RawContexto);
+  if (!raw) throw new Error("useFacturacion debe usarse dentro de <FacturacionProvider>");
+  const empresa = useContext(EmpresaContexto);
+  const { estado, dispatch } = raw;
+
+  return useMemo<FacturacionContexto>(() => {
+    const eid = empresa.key;
+    const clientes = estado.clientes.filter((c) => c.empresaId === eid);
+    const proveedores = estado.proveedores.filter((p) => p.empresaId === eid);
+    const reportes = estado.reportes.filter((r) => r.empresaId === eid);
+    const prefacturas = estado.prefacturas.filter((p) => p.empresaId === eid);
+    const facturas = estado.facturas.filter((f) => f.empresaId === eid);
+    const facturasRecibidas = estado.facturasRecibidas.filter((c) => c.empresaId === eid);
+    const cuentasPorPagar = estado.cuentasPorPagar.filter((d) => d.empresaId === eid);
+    const retenciones = estado.retenciones.filter((r) => r.empresaId === eid);
+    const tarifas = estado.tarifas.filter((t) => t.empresaId === eid);
+
+    return {
+      empresa,
+      clientes,
+      proveedores,
+      reportes,
+      prefacturas,
+      facturas,
+      facturasRecibidas,
+      cuentasPorPagar,
+      retenciones,
+      tarifas,
       calibracion: estado.calibracion,
       nextClienteId: estado.nextClienteId,
       nextProveedorId: estado.nextProveedorId,
       nextFacturaRecibidaId: estado.nextFacturaRecibidaId,
+      // Búsqueda por id (globalmente único); en la práctica la UI solo pasa ids
+      // de la empresa activa.
       clientePorId: (id) => estado.clientes.find((c) => c.id === id),
       proveedorPorId: (id) => estado.proveedores.find((p) => p.id === id),
       retencionDeCompra: (facturaRecibidaId) =>
         estado.retenciones.find((r) => r.facturaRecibidaId === facturaRecibidaId),
-      siguienteNumeroPrefactura: () =>
-        siguienteNumero(estado.prefacturas.map((p) => p.numero)),
+      // Correlativos por empresa (cada una lleva su propia serie).
+      siguienteNumeroPrefactura: () => siguienteNumero(prefacturas.map((p) => p.numero)),
       siguienteComprobanteDe: (anio, mes) =>
-        siguienteComprobante(anio, mes, estado.retenciones.map((r) => r.comprobante)),
-      crearCliente: (datos) => dispatch({ tipo: "crearCliente", datos }),
-      crearProveedor: (datos) => dispatch({ tipo: "crearProveedor", datos }),
-      crearReporte: (datos) => dispatch({ tipo: "crearReporte", datos }),
+        siguienteComprobante(anio, mes, retenciones.map((r) => r.comprobante)),
+      crearCliente: (datos) => dispatch({ tipo: "crearCliente", empresaId: eid, datos }),
+      crearProveedor: (datos) => dispatch({ tipo: "crearProveedor", empresaId: eid, datos }),
+      crearReporte: (datos) => dispatch({ tipo: "crearReporte", empresaId: eid, datos }),
       editarReporte: (id, datos) => dispatch({ tipo: "editarReporte", id, datos }),
       eliminarReporte: (id) => dispatch({ tipo: "eliminarReporte", id }),
       crearPrefactura: (datos, reporteIds) =>
-        dispatch({ tipo: "crearPrefactura", datos, reporteIds }),
+        dispatch({ tipo: "crearPrefactura", empresaId: eid, datos, reporteIds }),
       editarPrefactura: (id, datos) => dispatch({ tipo: "editarPrefactura", id, datos }),
       emitirPrefactura: (id) => dispatch({ tipo: "emitirPrefactura", id }),
       eliminarPrefactura: (id) => dispatch({ tipo: "eliminarPrefactura", id }),
       generarFactura: (prefacturaId, datos) =>
         dispatch({ tipo: "generarFactura", prefacturaId, datos }),
       marcarFacturaCobrada: (id) => dispatch({ tipo: "marcarFacturaCobrada", id }),
-      crearFacturaRecibida: (datos) => dispatch({ tipo: "crearFacturaRecibida", datos }),
+      crearFacturaRecibida: (datos) =>
+        dispatch({ tipo: "crearFacturaRecibida", empresaId: eid, datos }),
       editarFacturaRecibida: (id, datos) =>
         dispatch({ tipo: "editarFacturaRecibida", id, datos }),
       eliminarFacturaRecibida: (id) => dispatch({ tipo: "eliminarFacturaRecibida", id }),
-      crearCuentaPorPagar: (datos) => dispatch({ tipo: "crearCuentaPorPagar", datos }),
+      crearCuentaPorPagar: (datos) =>
+        dispatch({ tipo: "crearCuentaPorPagar", empresaId: eid, datos }),
       editarCuentaPorPagar: (id, datos) =>
         dispatch({ tipo: "editarCuentaPorPagar", id, datos }),
       eliminarCuentaPorPagar: (id) => dispatch({ tipo: "eliminarCuentaPorPagar", id }),
       setVencimientoCuentaPorPagar: (id, fecha) =>
         dispatch({ tipo: "setVencimientoCuentaPorPagar", id, fecha }),
       pagarCuentaPorPagar: (id, datos) => dispatch({ tipo: "pagarCuentaPorPagar", id, datos }),
-      setVencimientoFactura: (id, fecha) => dispatch({ tipo: "setVencimientoFactura", id, fecha }),
-      crearRetencion: (datos) => dispatch({ tipo: "crearRetencion", datos }),
+      setVencimientoFactura: (id, fecha) =>
+        dispatch({ tipo: "setVencimientoFactura", id, fecha }),
+      crearRetencion: (datos) => dispatch({ tipo: "crearRetencion", empresaId: eid, datos }),
       eliminarRetencion: (id) => dispatch({ tipo: "eliminarRetencion", id }),
-      crearTarifa: (datos) => dispatch({ tipo: "crearTarifa", datos }),
+      crearTarifa: (datos) => dispatch({ tipo: "crearTarifa", empresaId: eid, datos }),
       editarTarifa: (id, datos) => dispatch({ tipo: "editarTarifa", id, datos }),
       eliminarTarifa: (id) => dispatch({ tipo: "eliminarTarifa", id }),
       setCalibracionCampo: (campo, pos) => dispatch({ tipo: "setCalibracionCampo", campo, pos }),
       setCalibracionBase: (valores) => dispatch({ tipo: "setCalibracionBase", valores }),
       resetCalibracion: () => dispatch({ tipo: "resetCalibracion" }),
-    }),
-    [estado]
-  );
-
-  return <Contexto.Provider value={valor}>{children}</Contexto.Provider>;
-}
-
-export function useFacturacion(): FacturacionContexto {
-  const ctx = useContext(Contexto);
-  if (!ctx) throw new Error("useFacturacion debe usarse dentro de <FacturacionProvider>");
-  return ctx;
+    };
+  }, [estado, dispatch, empresa]);
 }

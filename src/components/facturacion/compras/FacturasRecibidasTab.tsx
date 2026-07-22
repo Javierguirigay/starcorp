@@ -20,8 +20,6 @@ import { VisorPdf } from "../VisorPdf";
 import { FacturaRecibidaModal } from "./FacturaRecibidaModal";
 import { RetencionEditor } from "./RetencionEditor";
 
-const EMPRESA_ID = "loter";
-
 const selectCls =
   "rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100";
 
@@ -61,7 +59,7 @@ export function FacturasRecibidasTab() {
       return;
     if (c.pdfUrl) URL.revokeObjectURL(c.pdfUrl);
     fac.eliminarFacturaRecibida(c.id);
-    finanzas.eliminarPagoCompra(c.id, EMPRESA_ID);
+    finanzas.eliminarPagoCompra(c.id, fac.empresa.key);
     setToast("Factura recibida eliminada · salida de Finanzas revertida");
   };
 
@@ -74,7 +72,7 @@ export function FacturasRecibidasTab() {
           <div>
             <h2 className="font-display text-base font-700 text-navy-950">Facturas recibidas</h2>
             <p className="text-xs text-slate-400">
-              Compras a proveedores ya pagadas (Bs) · salida automática en Finanzas LOTER
+              Compras a proveedores ya pagadas (Bs) · salida automática en Finanzas {fac.empresa.nombre}
             </p>
           </div>
           <button

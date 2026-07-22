@@ -6,9 +6,9 @@
  * cargarlo SIEMPRE con `await import(...)` desde un handler de cliente.
  */
 import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import type { Proveedor, Retencion } from "@/lib/types";
-import { logoPdfDe } from "@/lib/branding";
-import { LOTER_DIRECCION, LOTER_RIF } from "@/lib/config";
+import type { Empresa, Proveedor, Retencion } from "@/lib/types";
+import { logoPdfDe, logoPdfTamAncho } from "@/lib/branding";
+import { datosFiscalesDe } from "@/lib/empresaFiscal";
 import { formatNumberVE } from "@/lib/format";
 import { fechaDoc } from "@/lib/negocio/facturacion";
 import { MESES } from "@/lib/negocio/retenciones";
@@ -18,9 +18,6 @@ const NAVY = "#0F2742";
 const GOLD = "#D08F00";
 const NEGRO = "#111111";
 const GRIS = "#D9DFE7";
-
-/** Logo oficial de LOTER para el membrete (null ⇒ marca tipográfica). */
-const LOGO_SRC = logoPdfDe("loter");
 
 /* ============ Comprobante de retención (oficial) ============ */
 
@@ -60,11 +57,16 @@ const cr = StyleSheet.create({
 export function ComprobanteRetencionDoc({
   retencion,
   proveedor,
+  empresa,
 }: {
   retencion: Retencion;
   proveedor: Proveedor;
+  empresa: Empresa;
 }) {
   const r = retencion;
+  const fisc = datosFiscalesDe(empresa.key);
+  const logo = logoPdfDe(empresa.key);
+  const logoTam = logoPdfTamAncho(empresa.key, 76);
   // Anchos de columna del detalle (suman ~772 pt útiles en carta horizontal).
   const w = [34, 52, 52, 56, 44, 44, 30, 52, 74, 74, 68, 34, 62, 62];
   const cab = [
@@ -88,14 +90,14 @@ export function ComprobanteRetencionDoc({
       <Page size="LETTER" orientation="landscape" style={cr.page}>
         <View style={cr.cabecera}>
           <View style={cr.logo}>
-            {LOGO_SRC ? (
-              /* Proporción del PNG oficial (600×513). */
+            {logo ? (
+              /* Ancho fijo 76 pt; alto según la proporción real del logo. */
               /* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image no admite alt */
-              <Image src={LOGO_SRC} style={{ width: 76, height: 65 }} />
+              <Image src={logo} style={logoTam} />
             ) : (
               <>
-                <Text style={cr.logoLoter}>LOTER</Text>
-                <Text style={cr.logoSub}>SERVICIOS INTEGRALES</Text>
+                <Text style={cr.logoLoter}>{fisc.marca.principal}</Text>
+                {fisc.marca.sub ? <Text style={cr.logoSub}>{fisc.marca.sub}</Text> : null}
               </>
             )}
           </View>
@@ -136,22 +138,22 @@ export function ComprobanteRetencionDoc({
           </View>
         </View>
 
-        {/* Agente de retención (datos fijos de LOTER) */}
+        {/* Agente de retención (empresa emisora) */}
         <View style={cr.filaBloques}>
           <View style={[cr.bloque, { flex: 1 }]}>
             <Text style={cr.bloqueTit}>Nombre o Razón social del Agente de Retención</Text>
-            <Text style={cr.bloqueVal}>LOTER, C.A</Text>
+            <Text style={cr.bloqueVal}>{fisc.razonSocial}</Text>
           </View>
           <View style={[cr.bloque, { flex: 1 }]}>
             <Text style={cr.bloqueTit}>
               Registro de Información fiscal del Agente de Retención
             </Text>
-            <Text style={cr.bloqueVal}>{LOTER_RIF}</Text>
+            <Text style={cr.bloqueVal}>{fisc.rif}</Text>
           </View>
         </View>
         <View style={cr.bloque}>
           <Text style={cr.bloqueTit}>Dirección Fiscal del Agente de Retención</Text>
-          <Text style={cr.bloqueVal}>{LOTER_DIRECCION.toUpperCase()}</Text>
+          <Text style={cr.bloqueVal}>{(fisc.direccion ?? "").toUpperCase()}</Text>
         </View>
 
         {/* Sujeto retenido */}
@@ -271,11 +273,14 @@ export function LibroComprasDoc({
   periodo,
   filas,
   resumen,
+  empresa,
 }: {
   periodo: string; // etiquetaQuincena
   filas: FilaLibroCompras[];
   resumen: ResumenLibroCompras;
+  empresa: Empresa;
 }) {
+  const fisc = datosFiscalesDe(empresa.key);
   const w = [26, 44, 56, 118, 44, 44, 36, 36, 42, 34, 46, 56, 56, 24, 50, 50];
   const cab = [
     "Oper-\nNro.",
@@ -308,10 +313,10 @@ export function LibroComprasDoc({
   return (
     <Document>
       <Page size="LETTER" orientation="landscape" style={lc.page}>
-        <Text style={lc.encabezadoBold}>NOMBRE DE LA EMPRESA: LOTER, C.A</Text>
+        <Text style={lc.encabezadoBold}>NOMBRE DE LA EMPRESA: {fisc.razonSocial}</Text>
         <Text style={lc.encabezadoBold}>LIBRO DE COMPRAS</Text>
-        <Text style={lc.encabezado}>DOMICILIO FISCAL: {LOTER_DIRECCION.toUpperCase()}</Text>
-        <Text style={lc.encabezado}>RIF: {LOTER_RIF}</Text>
+        <Text style={lc.encabezado}>DOMICILIO FISCAL: {(fisc.direccion ?? "").toUpperCase()}</Text>
+        <Text style={lc.encabezado}>RIF: {fisc.rif}</Text>
         <Text style={lc.encabezadoBold}>PERÍODO: {periodo}</Text>
 
         <View style={lc.tabla}>

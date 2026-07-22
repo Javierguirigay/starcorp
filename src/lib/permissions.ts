@@ -13,7 +13,8 @@ export type Area =
   | "tarifas"
   | "ordenes"
   | "inventario"
-  | "mantenimiento";
+  | "mantenimiento"
+  | "catering";
 
 const AREAS_OPERACIONES: Area[] = [
   "inicio",

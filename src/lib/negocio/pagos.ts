@@ -14,6 +14,8 @@ import { calcularConAdelanto, round2 } from "./nomina";
 import { aplicarAdelantos, totalPendiente } from "./adelantos";
 
 export interface ParamsRegistroPago {
+  /** Empresa dueña del pago (Empresa.key). */
+  empresaId: string;
   empleados: Empleado[];
   faltas: Record<number, string[]>;
   adelantos: AdelantoSueldo[];
@@ -70,6 +72,7 @@ export function construirRegistroPago(p: ParamsRegistroPago): {
 
   const pago: PagoHistorial = {
     id: pagoId,
+    empresaId: p.empresaId,
     categoria: p.categoria,
     desde: p.desde,
     hasta: p.hasta,

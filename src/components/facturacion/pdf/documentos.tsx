@@ -6,10 +6,10 @@
  * @react-pdf/renderer: cargarlo SIEMPRE con `await import(...)` desde un
  * handler de cliente.
  */
-import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import type { CalibracionPlantilla, Cliente, Factura, RenglonFactura } from "@/lib/types";
-import { logoPdfDe } from "@/lib/branding";
-import { LOTER_DIRECCION, LOTER_RIF } from "@/lib/config";
+import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import type { CalibracionPlantilla, Cliente, Empresa, Factura, RenglonFactura } from "@/lib/types";
+import { datosFiscalesDe } from "@/lib/empresaFiscal";
+import { MembreteEmpresa, membreteDeEmpresa } from "@/components/pdf/Membrete";
 import { formatNumberVE } from "@/lib/format";
 import {
   fechaDoc,
@@ -19,9 +19,6 @@ import {
   type FilaLibroVentas,
   type TotalesLibroVentas,
 } from "@/lib/negocio/facturacion";
-
-/** Logo oficial de LOTER para los membretes (null ⇒ marca tipográfica). */
-const LOGO_SRC = logoPdfDe("loter");
 
 const NAVY = "#0F2742";
 const GOLD = "#D08F00";
@@ -100,36 +97,10 @@ const s = StyleSheet.create({
   },
 });
 
-function Encabezado() {
-  return (
-    <>
-      <View style={s.cabecera}>
-        {LOGO_SRC ? (
-          /* Proporción del PNG oficial (600×513); arriba-izquierda como en
-             los documentos reales. */
-          /* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image no admite alt */
-          <Image src={LOGO_SRC} style={{ width: 96, height: 82 }} />
-        ) : (
-          <View style={s.logoTexto}>
-            <Text style={s.logoLoter}>LOTER</Text>
-            <Text style={s.logoSub}>SERVICIOS INTEGRALES</Text>
-          </View>
-        )}
-        <View style={s.cabDerecha}>
-          <Text style={s.cabRazon}>LOTER, C.A.  /  RIF. J-31717295-7</Text>
-          <Text style={s.cabLinea}>Construcción,  Mantenimiento</Text>
-          <Text style={s.cabLinea}>Electrificación, Izamiento, Mudanza de Taladros</Text>
-          <Text style={s.cabLinea}>Vaccuums, Well Services, Acarreo de Fluidos</Text>
-          <Text style={s.cabLinea}>Transporte, Maquinaria Pesada, Locaciones Petroleras</Text>
-          <Text style={s.cabLinea}>
-            Av. Bolívar con Juncal, Edif Pichel, Piso 1, Of. 14, Maturín Edo. Monagas
-          </Text>
-          <View style={s.cabRegla} />
-          <Text style={s.cabTelefonos}>Tlfs.:  0291-642.85.69/ e-mail: loterca@gmail.com</Text>
-        </View>
-      </View>
-    </>
-  );
+/* Membrete de la empresa emisora (para LOTER reproduce su encabezado histórico
+   vía DATOS_LOTER). */
+function Encabezado({ empresa }: { empresa: Empresa }) {
+  return <MembreteEmpresa datos={membreteDeEmpresa(empresa)} />;
 }
 
 /* ============ Pre-factura / Factura (registro interno) ============ */
@@ -143,6 +114,7 @@ export function DocumentoVenta({
   condicionesPago,
   renglones,
   locacion,
+  empresa,
 }: {
   variante: "prefactura" | "factura";
   numero: string;
@@ -152,6 +124,7 @@ export function DocumentoVenta({
   condicionesPago: string;
   renglones: RenglonFactura[];
   locacion: string;
+  empresa: Empresa;
 }) {
   const esPre = variante === "prefactura";
   const sym = esPre ? "$" : "";
@@ -164,7 +137,7 @@ export function DocumentoVenta({
   return (
     <Document>
       <Page size="LETTER" style={s.page}>
-        <Encabezado />
+        <Encabezado empresa={empresa} />
 
         <View style={s.tituloCaja}>
           <View style={s.tituloFila}>
@@ -403,11 +376,14 @@ export function LibroVentasDoc({
   periodo,
   filas,
   totales,
+  empresa,
 }: {
   periodo: string; // etiquetaQuincena
   filas: FilaLibroVentas[];
   totales: TotalesLibroVentas;
+  empresa: Empresa;
 }) {
+  const fisc = datosFiscalesDe(empresa.key);
   // Formato fiscal SENIAT (docs/referencias/libro_de_ventas.pdf). 20 columnas;
   // hoy solo se emiten ventas internas gravadas al 16%, el resto va en 0,00.
   const w = [20, 38, 50, 70, 34, 36, 40, 32, 28, 32, 46, 40, 44, 20, 44, 40, 20, 40, 38, 34];
@@ -457,10 +433,10 @@ export function LibroVentasDoc({
   return (
     <Document>
       <Page size="LETTER" orientation="landscape" style={lv.page}>
-        <Text style={lv.encabezadoBold}>NOMBRE DE LA EMPRESA: LOTER, C.A</Text>
+        <Text style={lv.encabezadoBold}>NOMBRE DE LA EMPRESA: {fisc.razonSocial}</Text>
         <Text style={lv.encabezadoBold}>LIBRO DE VENTAS</Text>
-        <Text style={lv.encabezado}>DOMICILIO FISCAL: {LOTER_DIRECCION.toUpperCase()}</Text>
-        <Text style={lv.encabezado}>RIF: {LOTER_RIF}</Text>
+        <Text style={lv.encabezado}>DOMICILIO FISCAL: {(fisc.direccion ?? "").toUpperCase()}</Text>
+        <Text style={lv.encabezado}>RIF: {fisc.rif}</Text>
         <Text style={lv.encabezadoBold}>PERÍODO: {periodo}</Text>
 
         <View style={lv.tabla}>

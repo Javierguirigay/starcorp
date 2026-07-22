@@ -28,8 +28,6 @@ import { useFacturacion } from "../FacturacionProvider";
 import { VisorPdf } from "../VisorPdf";
 import { ProveedorModal } from "./ProveedorModal";
 
-const EMPRESA_ID = "loter";
-
 const inputCls =
   "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100";
 
@@ -53,12 +51,14 @@ export function FacturaRecibidaModal({
 }) {
   const fac = useFacturacion();
   const finanzas = useFinanzas();
+  // Empresa activa (emisora de la compra): sus categorías/cuenta de Finanzas.
+  const empresaId = fac.empresa.key;
   const proveedorDeCompra = compra ? fac.proveedorPorId(compra.proveedorId) : undefined;
 
   // Categorías de salida de Finanzas (la compra nace pagada ⇒ egreso automático).
   const opcionesCategoria = categoriasParaTipo(
-    finanzas.categoriasDe(EMPRESA_ID),
-    EMPRESA_ID,
+    finanzas.categoriasDe(empresaId),
+    empresaId,
     "salida"
   );
   const gastosOperativos = opcionesCategoria.find((c) => c.nombre === "Gastos Operativos");
@@ -67,7 +67,7 @@ export function FacturaRecibidaModal({
   );
   // Cuenta de Finanzas desde donde sale el pago (predeterminada de LOTER).
   const [cuentaId, setCuentaId] = useState<number | "">(
-    () => finanzas.cuentaPredeterminadaDe(EMPRESA_ID)?.id ?? ""
+    () => finanzas.cuentaPredeterminadaDe(empresaId)?.id ?? ""
   );
 
   const [proveedorId, setProveedorId] = useState<number | "">(compra?.proveedorId ?? "");
@@ -223,10 +223,10 @@ export function FacturaRecibidaModal({
           fecha: fmtISO(new Date()),
           categoriaId: categoriaId as number,
         },
-        EMPRESA_ID,
+        empresaId,
         cuentaId as number
       );
-      onToast("Factura recibida registrada · pagada (salida en Finanzas LOTER)");
+      onToast(`Factura recibida registrada · pagada (salida en Finanzas ${fac.empresa.nombre})`);
     }
     onGuardado?.(fecha);
     cerrar(pdfUrl);
@@ -422,11 +422,11 @@ export function FacturaRecibidaModal({
               )}
             </div>
 
-            {/* La compra nace pagada ⇒ salida automática en Finanzas LOTER. */}
+            {/* La compra nace pagada ⇒ salida automática en Finanzas de la empresa. */}
             {!compra && (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3">
                 <p className="mb-2 text-[11px] font-600 uppercase tracking-wide text-emerald-700">
-                  Se registra pagada · salida en Finanzas LOTER
+                  Se registra pagada · salida en Finanzas {fac.empresa.nombre}
                 </p>
                 <label className="mb-1 block text-sm font-600 text-navy-900">
                   Categoría de Finanzas (salida)
@@ -445,7 +445,7 @@ export function FacturaRecibidaModal({
                 <label className="mb-1 mt-3 block text-sm font-600 text-navy-900">
                   Cuenta desde donde se paga
                 </label>
-                <SelectorCuenta empresaId={EMPRESA_ID} value={cuentaId} onChange={setCuentaId} />
+                <SelectorCuenta empresaId={empresaId} value={cuentaId} onChange={setCuentaId} />
                 <p className="mt-2 text-xs text-emerald-800/80">
                   {finanzas.tasa > 0
                     ? `Equivale a ${money(round2(round2(parseVES(totalTexto)) / finanzas.tasa))} a la tasa vigente (${money(finanzas.tasa, "Bs")}/USD).`

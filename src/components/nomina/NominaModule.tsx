@@ -39,7 +39,7 @@ import { construirRegistroPago } from "@/lib/negocio/pagos";
 import { useFinanzas } from "@/components/finanzas/FinanzasProvider";
 import { TasaInput } from "@/components/finanzas/TasaInput";
 import { SelectorCuenta } from "@/components/finanzas/SelectorCuenta";
-import type { AdelantoSueldo, CategoriaPago, Empleado, PagoHistorial } from "@/lib/types";
+import type { AdelantoSueldo, CategoriaPago, Empleado, Empresa, PagoHistorial } from "@/lib/types";
 import { Toast } from "@/components/ui/Toast";
 import { Avatar, BadgeCategoria, BadgeEstatus } from "./badges";
 import { EmpleadoModal, type EmpleadoDatos } from "./EmpleadoModal";
@@ -51,6 +51,7 @@ import { AdelantoModal, type AdelantoDatos } from "./AdelantoModal";
 /* ===================== Estado central (reducer) ===================== */
 
 interface Estado {
+  empresaId: string; // Empresa.key: la nómina de este módulo pertenece a una empresa
   empleados: Empleado[];
   nextEmpId: number;
   historial: PagoHistorial[];
@@ -77,15 +78,20 @@ type Accion =
       tasa: number;
     };
 
-const ESTADO_INICIAL: Estado = {
-  empleados: EMPLEADOS_SEED,
-  nextEmpId: NEXT_EMP_ID,
-  historial: HISTORIAL_SEED,
-  nextHistId: NEXT_HIST_ID,
-  faltas: {},
-  adelantos: ADELANTOS_SEED,
-  nextAdelantoId: NEXT_ADELANTO_ID,
-};
+/** Estado inicial scopeado a la empresa: solo sus semillas (las demás empresas
+    arrancan sin empleados/historial/adelantos). */
+function crearEstadoInicial(empresa: Empresa): Estado {
+  return {
+    empresaId: empresa.key,
+    empleados: EMPLEADOS_SEED.filter((e) => e.empresaId === empresa.key),
+    nextEmpId: NEXT_EMP_ID,
+    historial: HISTORIAL_SEED.filter((h) => h.empresaId === empresa.key),
+    nextHistId: NEXT_HIST_ID,
+    faltas: {},
+    adelantos: ADELANTOS_SEED.filter((a) => a.empresaId === empresa.key),
+    nextAdelantoId: NEXT_ADELANTO_ID,
+  };
+}
 
 function reducer(estado: Estado, accion: Accion): Estado {
   switch (accion.tipo) {
@@ -100,7 +106,10 @@ function reducer(estado: Estado, accion: Accion): Estado {
       }
       return {
         ...estado,
-        empleados: [...estado.empleados, { id: estado.nextEmpId, ...accion.datos }],
+        empleados: [
+          ...estado.empleados,
+          { id: estado.nextEmpId, empresaId: estado.empresaId, ...accion.datos },
+        ],
         nextEmpId: estado.nextEmpId + 1,
       };
     }
@@ -129,6 +138,7 @@ function reducer(estado: Estado, accion: Accion): Estado {
     case "registrarAdelanto": {
       const adelanto: AdelantoSueldo = {
         id: estado.nextAdelantoId,
+        empresaId: estado.empresaId,
         empleadoId: accion.empleadoId,
         montoUSD: accion.datos.montoUSD,
         fecha: accion.datos.fecha,
@@ -152,6 +162,7 @@ function reducer(estado: Estado, accion: Accion): Estado {
       return { ...estado, adelantos: cancelarAdelanto(estado.adelantos, accion.id) };
     case "registrarPago": {
       const { pago, adelantos } = construirRegistroPago({
+        empresaId: estado.empresaId,
         empleados: estado.empleados,
         faltas: estado.faltas,
         adelantos: estado.adelantos,
@@ -200,15 +211,15 @@ const tabCls = (activo: boolean) =>
     activo ? "bg-navy-900 text-white" : "text-slate-500 hover:text-navy-900"
   }`;
 
-export function NominaModule() {
-  const [estado, dispatch] = useReducer(reducer, ESTADO_INICIAL);
+export function NominaModule({ empresa }: { empresa: Empresa }) {
+  const [estado, dispatch] = useReducer(reducer, empresa, crearEstadoInicial);
 
   // Tasa Bs/USD global compartida con Finanzas (única en toda la app).
   const { tasa, cuentas, transacciones, registrarPagoNomina, cuentaPredeterminadaDe } =
     useFinanzas();
-  // Cuenta de Finanzas donde cae la salida del pago (predeterminada de LOTER).
+  // Cuenta de Finanzas donde cae la salida del pago (predeterminada de la empresa).
   const [cuentaPagoId, setCuentaPagoId] = useState<number | "">(
-    () => cuentaPredeterminadaDe("loter")?.id ?? ""
+    () => cuentaPredeterminadaDe(empresa.key)?.id ?? ""
   );
 
   const [tabActiva, setTabActiva] = useState<TabNomina>("empleados");
@@ -328,6 +339,7 @@ export function NominaModule() {
     // Misma función pura que el reducer con los mismos inputs ⇒ mismo pago
     // (id y totales); Finanzas registra la salida automática de Nómina.
     const { pago } = construirRegistroPago({
+      empresaId: empresa.key,
       empleados: estado.empleados,
       faltas: estado.faltas,
       adelantos: estado.adelantos,
@@ -338,7 +350,7 @@ export function NominaModule() {
       registrado,
       tasa,
     });
-    registrarPagoNomina(pago, "loter", cuentaPagoId);
+    registrarPagoNomina(pago, empresa.key, cuentaPagoId);
     setToast((pagoCat === "Semanal" ? "Semana" : "Quincena") + " registrada en el historial");
   };
 
@@ -691,7 +703,7 @@ export function NominaModule() {
           </p>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="sm:w-64">
-              <SelectorCuenta empresaId="loter" value={cuentaPagoId} onChange={setCuentaPagoId} />
+              <SelectorCuenta empresaId={empresa.key} value={cuentaPagoId} onChange={setCuentaPagoId} />
             </div>
             <button
               onClick={registrarPago}
@@ -850,6 +862,7 @@ export function NominaModule() {
           return (
             <DetalleModal
               pago={pago}
+              empresa={empresa}
               // Tasa congelada al registrar el pago (pagos previos al campo: la vigente).
               tasa={pago.tasa ?? tasa}
               empleados={estado.empleados}

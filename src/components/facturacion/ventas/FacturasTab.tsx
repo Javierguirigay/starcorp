@@ -76,6 +76,7 @@ export function FacturasTab() {
             condicionesPago={f.condicionesPago}
             renglones={f.renglones}
             locacion={f.locacion}
+            empresa={fac.empresa}
           />
         ) : (
           <docs.PlantillaImpresionDoc factura={f} cliente={cliente} calibracion={fac.calibracion} />
@@ -112,10 +113,10 @@ export function FacturasTab() {
         fecha: fmtISO(new Date()),
         clienteNombre: cliente?.razonSocial ?? "—",
       },
-      "loter",
+      fac.empresa.key,
       cuentaId
     );
-    setToast("Cobro registrado en Finanzas LOTER");
+    setToast(`Cobro registrado en Finanzas · ${fac.empresa.nombre}`);
   };
 
   return (
@@ -244,7 +245,7 @@ export function FacturasTab() {
 
       {cobrando && (
         <CobroFacturaModal
-          empresaId="loter"
+          empresaId={fac.empresa.key}
           numeroFactura={cobrando.numeroFactura}
           clienteNombre={fac.clientePorId(cobrando.clienteId)?.razonSocial ?? "—"}
           totalBs={totalesRenglones(cobrando.renglones).total}

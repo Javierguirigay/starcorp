@@ -24,10 +24,21 @@ export interface Empresa {
 
 export type CategoriaEquipo = "petrolero" | "oficina" | "herramienta" | "vehiculo";
 
-/** Estado derivado (nunca se guarda): "Mantenimiento" si tiene una orden
-    "En taller", "Asignado" si figura en una asignación activa, si no
-    "Disponible". Ver derivarEstadoEquipo() en negocio/inventario.ts. */
-export type EstadoEquipo = "Disponible" | "Asignado" | "Mantenimiento";
+/** Estado derivado: "Retirado" si el equipo tiene `baja` (único hecho
+    persistido), "Mantenimiento" si tiene una orden "En taller", "Asignado" si
+    figura en una asignación activa, si no "Disponible".
+    Ver derivarEstadoEquipo() en negocio/inventario.ts. */
+export type EstadoEquipo = "Disponible" | "Asignado" | "Mantenimiento" | "Retirado";
+
+/** Salida definitiva del inventario (venta o baja). El equipo no se elimina:
+    queda en el historial con la referencia del documento que lo retiró. */
+export interface BajaEquipo {
+  fecha: string; // ISO yyyy-mm-dd
+  motivo: "venta" | "baja";
+  /** Número del documento que originó la salida (ej. "OE-0005"). */
+  referencia?: string;
+  ordenId?: number;
+}
 
 /** Ficha técnica del equipo (identidad). Todos los campos opcionales; los
     mecánicos (motor) aplican sobre todo a petroleros/vehículos y `garantia` a
@@ -50,12 +61,124 @@ export interface EquipoConsumible {
 
 export interface Equipo {
   id: number;
+  empresaId: string; // Empresa.key
   codigo: string; // nombre/código del equipo
   categoria: CategoriaEquipo;
   ubicacion: string;
   ficha?: FichaEquipo;
   /** Consumibles/repuestos que usa este equipo (para verificar stock). */
   consumibles?: EquipoConsumible[];
+  /** Presente = fuera del inventario activo (vendido o dado de baja). */
+  baja?: BajaEquipo;
+}
+
+/* ---------------- Ubicaciones (almacenes / patios) ---------------- */
+
+export type TipoUbicacion = "almacen" | "patio" | "campo" | "otro";
+
+/** Catálogo administrable de ubicaciones físicas. Consumible.ubicacion y
+    Equipo.ubicacion guardan el NOMBRE (string): el catálogo es dueño del
+    nombre y renombrar cascada sobre el estado actual, no sobre el historial
+    de movimientos (que conserva el nombre vigente al momento). */
+export interface Ubicacion {
+  id: number;
+  empresaId: string; // Empresa.key
+  nombre: string; // único, ej. "Patio Punta de Mata"
+  tipo: TipoUbicacion;
+  /** Desactivada: fuera de los selectores; el historial la conserva. */
+  activa: boolean;
+}
+
+/* ---------------- Semovientes (ganado — inventario de AGROSTAR) ----------------
+   Registro de animales (no lleva stock/kardex como los consumibles): cada
+   res es una ficha con su categoría, estatus reproductivo/sanitario y linaje. */
+
+/** Ficha de un animal del hato. Los campos textuales admiten valores libres
+    (con sugerencias en la UI) por la variedad real de categorías y estatus. */
+export interface Semoviente {
+  id: number;
+  empresaId: string; // Empresa.key
+  /** Identificación/arete del animal ("S/N" si no tiene). */
+  numero: string;
+  /** Tipo de res: Vaca, Novilla, Toro, Becerro, Becerra, Mauta, Maute… */
+  categoria: string;
+  nombre: string;
+  /** Estatus reproductivo/sanitario: Preñada, Parida, Parió Hembra, Vacía,
+      Horra, Renco, Perdida… */
+  estatus: string;
+  /** Fecha relevante (parto/preñez), ISO yyyy-mm-dd; se muestra dd-mm-yyyy. */
+  fecha?: string;
+  /** Linaje: "Hija de Caramelo". */
+  parentesco?: string;
+  notas?: string;
+}
+
+/* ---------------- Inventario de MONACO (comida) ----------------
+   Insumos = ingredientes con control de stock; Preparados = recetas que
+   consumen insumos (al "preparar" se descuenta el stock). Dominio propio,
+   independiente del inventario de LOTER. */
+
+export interface Insumo {
+  id: number;
+  empresaId: string; // Empresa.key
+  nombre: string;
+  /** Carnes, Vegetales, Lácteos, Secos, Bebidas… (texto libre con sugerencias). */
+  categoria: string;
+  unidad: string; // kg, L, unidad…
+  cantidad: number; // existencias actuales
+  stockMinimo: number; // umbral de aviso de bajo stock
+  ubicacion: string; // Nevera, Despensa, Congelador…
+  /** Costo unitario referencial (opcional). */
+  costoUnitario?: number;
+}
+
+/** Renglón de una receta: insumo + cantidad que consume por lote preparado. */
+export interface RenglonReceta {
+  insumoId: number;
+  cantidad: number;
+}
+
+export interface Preparado {
+  id: number;
+  empresaId: string; // Empresa.key
+  nombre: string;
+  /** Cuánto rinde un lote (porciones/cantidad) y su unidad. */
+  rendimiento: number;
+  unidad: string;
+  /** Insumos que consume por lote. Al "preparar" N lotes se descuenta N× del stock. */
+  receta: RenglonReceta[];
+}
+
+/* ---------------- Inventario de AGROSTAR (equipos y consumibles) ----------------
+   Complementa a los Semovientes: maquinaria/equipos de la finca y consumibles
+   (aceites, filtros…) con control de stock. Dominio propio de AGROSTAR,
+   independiente del inventario de LOTER. */
+
+export interface EquipoFinca {
+  id: number;
+  empresaId: string; // Empresa.key
+  nombre: string;
+  /** Tractor, Implemento, Bomba, Vehículo, Herramienta… (texto libre). */
+  categoria: string;
+  marca?: string;
+  modelo?: string;
+  serial?: string;
+  /** Operativo, En reparación, Dado de baja… */
+  estado: string;
+  ubicacion?: string;
+  notas?: string;
+}
+
+/** Consumible de finca (aceite/filtro/grasa…) con control de existencias. */
+export interface ConsumibleFinca {
+  id: number;
+  empresaId: string; // Empresa.key
+  nombre: string;
+  tipo: string; // Aceite, Filtro, Grasa, Refrigerante…
+  unidad: string;
+  cantidad: number;
+  stockMinimo: number;
+  ubicacion: string;
 }
 
 /* ---------------- Consumibles (repuestos con stock) ---------------- */
@@ -67,11 +190,15 @@ export type TipoConsumible =
   | "Batería"
   | "Refrigerante"
   | "Neumático"
-  | "Otro";
+  | "Otro"
+  // Permite tipos personalizados creados desde el formulario (opción "Otro")
+  // conservando el autocompletado de los valores predefinidos.
+  | (string & {});
 
 /** Ítem del catálogo de consumibles con control de existencias. */
 export interface Consumible {
   id: number;
+  empresaId: string; // Empresa.key
   nombre: string;
   tipo: TipoConsumible;
   unidad: string; // "unidad", "litro", "juego"…
@@ -80,12 +207,57 @@ export interface Consumible {
   ubicacion: string;
 }
 
+/* ---------------- Movimientos de inventario (kardex) ----------------
+   OJO: distinto de Movimiento/TipoMovimiento (Finanzas, más abajo). */
+
+export type TipoMovInventario = "entrada" | "salida" | "salida_definitiva" | "retorno" | "ajuste";
+export type ClaseArticulo = "consumible" | "equipo";
+export type OrigenMovInventario = "manual" | "orden_entrega" | "orden_compra" | "mantenimiento";
+
+/** Registro del kardex: cada entrada/salida/ajuste de inventario con su
+    referencia. Los campos nombre/unidad son snapshots: sobreviven a renombres
+    y eliminaciones del catálogo. */
+export interface MovimientoInventario {
+  id: number;
+  empresaId: string; // Empresa.key
+  fecha: string; // ISO yyyy-mm-dd
+  clase: ClaseArticulo;
+  articuloId: number; // Consumible.id | Equipo.id
+  articuloNombre: string;
+  /** Positiva; en "ajuste" es el delta con signo. Equipos: siempre 1. */
+  cantidad: number;
+  unidad?: string; // consumibles; equipos: undefined
+  /** Destino en entradas/retornos; origen en salidas. */
+  ubicacion: string;
+  tipo: TipoMovInventario;
+  origen: OrigenMovInventario;
+  /** Orden que lo generó (clave de reversión e idempotencia). */
+  ordenId?: number;
+  /** Mantenimiento que lo generó (clave de reversión e idempotencia,
+      paralela a ordenId). */
+  mantenimientoId?: number;
+  referencia: string; // "OE-0001" | "OC-0002" | "MTTO-0003" | "Manual"
+  nota?: string;
+}
+
 /* ---------------- Mantenimiento ---------------- */
 
 export type EstadoMantenimiento = "En taller" | "Pendiente" | "Programado" | "Completado";
 
+/** Material/repuesto de un mantenimiento. Con `consumibleId` está vinculado
+    al catálogo y descuenta stock al COMPLETAR el mantenimiento; sin él es
+    texto libre (repuesto fuera de inventario, no afecta stock). `descripcion`
+    es snapshot del nombre: sobrevive a renombres/eliminaciones del catálogo. */
+export interface MaterialMantenimiento {
+  cantidad: number;
+  unidad: string;
+  descripcion: string;
+  consumibleId?: number;
+}
+
 export interface RegistroMantenimiento {
   id: number;
+  empresaId: string; // Empresa.key
   equipo: string; // nombre del equipo (elegido del inventario)
   tipo: "Correctivo" | "Preventivo";
   programado: string; // ISO yyyy-mm-dd
@@ -93,6 +265,9 @@ export interface RegistroMantenimiento {
   estado: EstadoMantenimiento;
   tecnico: string;
   observaciones: string;
+  /** Planificados mientras no esté Completado; al completar, los vinculados
+      descuentan stock (kardex con referencia MTTO-xxxx). */
+  materiales?: MaterialMantenimiento[];
 }
 
 /* ---------------- Finanzas ---------------- */
@@ -242,6 +417,7 @@ export interface MovimientoGrupo {
 
 export interface Cliente {
   id: number;
+  empresaId: string; // Empresa.key
   razonSocial: string;
   rif: string;
   domicilio: string;
@@ -266,6 +442,7 @@ export type EstadoReporte = "pendiente" | "prefacturado";
 /** Reporte de servicio de campo (PDF escaneado + transcripción manual). */
 export interface ReporteServicio {
   id: number;
+  empresaId: string; // Empresa.key
   numeroControl: string; // ej. "00384"
   fecha: string; // ISO
   clienteId: number;
@@ -314,6 +491,7 @@ export const CATEGORIAS_TARIFA: Record<CategoriaTarifa, string> = {
     descripción del servicio sí es constante). Alimenta el selector del reporte. */
 export interface TarifaServicio {
   id: number;
+  empresaId: string; // Empresa.key
   descripcion: string; // constante, ej. "SERVICIO DE ALQUILER DE LUMINARIA MARCA COLEMAN TIPO JIRAFA"
   categoria: CategoriaTarifa;
   unidad: UnidadTarifa;
@@ -327,6 +505,7 @@ export type EstadoPreFactura = "borrador" | "emitida" | "facturada";
 /** Pre-factura en USD (documento previo al talonario fiscal). */
 export interface PreFactura {
   id: number;
+  empresaId: string; // Empresa.key
   numero: string; // correlativo "066", editable
   fecha: string; // ISO
   clienteId: number;
@@ -343,6 +522,7 @@ export type EstadoFactura = "pendiente" | "cobrada";
 /** Factura fiscal en Bs, creada siempre desde una pre-factura. */
 export interface Factura {
   id: number;
+  empresaId: string; // Empresa.key
   prefacturaId: number;
   /** Manuales: deben coincidir con el talonario fiscal pre-impreso. */
   numeroFactura: string;
@@ -363,6 +543,7 @@ export interface Factura {
 
 export interface Proveedor {
   id: number;
+  empresaId: string; // Empresa.key
   razonSocial: string;
   rif: string;
   direccion: string;
@@ -378,6 +559,7 @@ export type TipoTransaccionCompra = "01" | "02" | "03";
 /** Factura de compra recibida de un proveedor. Montos en Bs. */
 export interface FacturaRecibida {
   id: number;
+  empresaId: string; // Empresa.key
   proveedorId: number;
   numeroFactura: string;
   numeroControl: string;
@@ -421,6 +603,7 @@ export interface RetencionLinea {
 /** Comprobante de retención de IVA (Providencia SNAT/2025/000054). */
 export interface Retencion {
   id: number;
+  empresaId: string; // Empresa.key
   /** AAAAMM + correlativo de 8 dígitos (ej. "20260700000061"), editable. */
   comprobante: string;
   fechaEmision: string; // ISO
@@ -452,6 +635,7 @@ export type EstadoPorPagar = "pendiente" | "pagada";
  */
 export interface CuentaPorPagar {
   id: number;
+  empresaId: string; // Empresa.key
   tipo: TipoDocPorPagar;
   proveedorId: number;
   /** N° de la factura o de la nota de entrega. */
@@ -474,13 +658,32 @@ export interface CuentaPorPagar {
 
 export type TipoOrden = "compra" | "entrega" | "requerimiento";
 
-/** Renglón de una orden. precioUnitBs solo aplica a la orden de compra. */
+/** Modo de salida de un equipo en la orden de entrega: temporal (a campo,
+    crea una asignación y puede regresar) o definitiva (venta/baja). */
+export type ModoSalidaEquipo = "temporal" | "definitiva";
+
+/** Vínculo opcional de un renglón con el inventario. En orden de compra solo
+    se permiten consumibles; modoSalida aplica a equipos en orden de entrega. */
+export interface RefInventarioRenglon {
+  clase: ClaseArticulo;
+  id: number;
+  modoSalida?: ModoSalidaEquipo;
+}
+
+/** Renglón de una orden. precioUnitBs solo aplica a la orden de compra.
+    Con refInventario, `descripcion` es el nombre del artículo (snapshot):
+    el PDF imprime el renglón sin cambios. */
 export interface RenglonOrden {
   cantidad: number;
   unidad: string;
   descripcion: string;
   precioUnitBs?: number;
+  refInventario?: RefInventarioRenglon;
 }
+
+/** Recepción de una orden de compra: al marcarse "recibida" suma stock.
+    undefined equivale a "pendiente" (órdenes previas a esta función). */
+export type EstadoOrdenCompra = "pendiente" | "recibida";
 
 /**
  * Orden de compra / entrega / requerimiento. Un solo tipo con discriminante:
@@ -490,6 +693,7 @@ export interface RenglonOrden {
  */
 export interface Orden {
   id: number;
+  empresaId: string; // Empresa.key
   tipo: TipoOrden;
   numero: string; // OC-0001 / OE-0001 / OR-0001
   fecha: string; // ISO
@@ -505,6 +709,10 @@ export interface Orden {
   locacion?: string; // entrega
   transporte?: string; // entrega
   motivo?: string; // requerimiento
+  /** Solo compra: estado de recepción (undefined ≡ "pendiente"). */
+  estado?: EstadoOrdenCompra;
+  recibidaEn?: string; // ISO, fecha de recepción
+  ubicacionRecepcion?: string;
 }
 
 /* ---------------- Plantilla de impresión (factura fiscal) ---------------- */
@@ -555,6 +763,7 @@ export interface DatosBancarios {
 
 export interface Empleado {
   id: number;
+  empresaId: string; // Empresa.key
   nombre: string;
   cargo: string;
   dpto: string;
@@ -576,6 +785,7 @@ export interface AplicacionAdelanto {
 
 export interface AdelantoSueldo {
   id: number;
+  empresaId: string; // Empresa.key
   empleadoId: number;
   montoUSD: number;
   fecha: string; // ISO yyyy-mm-dd; se muestra dd-mm-yyyy
@@ -610,6 +820,7 @@ export interface DetallePago {
 
 export interface PagoHistorial {
   id: number;
+  empresaId: string; // Empresa.key
   categoria: CategoriaPago;
   desde: string; // ISO
   hasta: string; // ISO
@@ -625,8 +836,25 @@ export interface PagoHistorial {
 
 /* ---------------- Asignación de equipos ---------------- */
 
+/** Cabecera del documento "Orden de asignación" que originó la asignación.
+    Se persiste para poder REIMPRIMIR la orden desde el historial: sin esto,
+    el nro. de requerimiento, los responsables y las observaciones generales
+    solo vivirían en el formulario y se perderían al guardar.
+
+    Las asignaciones nacidas de una orden de entrega y el histórico semilla no
+    la tienen: para esas, el documento se arma con los datos de la asignación. */
+export interface DocumentoAsignacion {
+  numero: string; // ASG-yyyy-nnn
+  fecha: string; // ISO yyyy-mm-dd (fecha de solicitud)
+  entregadoPor: string;
+  recibidoPor: string;
+  /** Observaciones generales de la orden (no las de cada equipo). */
+  observaciones: string;
+}
+
 export interface Asignacion {
   id: string; // S-00x
+  empresaId: string; // Empresa.key
   cliente: string;
   equipos: string[]; // códigos de equipo del inventario
   desde: string; // ISO yyyy-mm-dd
@@ -634,6 +862,31 @@ export interface Asignacion {
   dias: number; // 0 mientras no tenga fecha "hasta" (en curso)
   estado: "Activo" | "Finalizado";
   observaciones: string;
+  /** Orden de entrega que la creó (salida temporal de equipo), si aplica. */
+  ordenId?: number;
+  /** Cabecera de la orden de asignación, para reimprimirla. */
+  documento?: DocumentoAsignacion;
+}
+
+/* ---- Documento PDF de la orden de asignación ---- */
+
+export interface FilaOrdenAsignacion {
+  id: string;
+  equipo: string;
+  desde: string;
+  hasta: string;
+  dias: number;
+  observaciones: string;
+}
+
+export interface DatosOrdenAsignacion {
+  numero: string;
+  fecha: string; // ISO yyyy-mm-dd (fecha de solicitud)
+  cliente: string;
+  observaciones: string;
+  entregadoPor: string;
+  recibidoPor: string;
+  filas: FilaOrdenAsignacion[];
 }
 
 /* ---------------- Retenciones ---------------- */
